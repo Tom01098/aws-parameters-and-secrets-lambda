@@ -1,0 +1,80 @@
+use std::env;
+
+use serde::Deserialize;
+
+const PORT_NAME: &str = "PARAMETERS_SECRETS_EXTENSION_HTTP_PORT";
+const SESSION_TOKEN_NAME: &str = "AWS_SESSION_TOKEN";
+const TOKEN_HEADER_NAME: &str = "X-AWS-Parameters-Secrets-Token";
+
+pub struct Manager {
+    client: reqwest::blocking::Client,
+}
+
+impl Default for Manager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Manager {
+    pub fn new() -> Self {
+        Self {
+            client: reqwest::blocking::Client::new(),
+        }
+    }
+
+    pub fn get_secret(&self, name: String) -> Secret {
+        self.client
+            .get(format!(
+                "http://localhost:{}/secretsmanager/get?secretId={}",
+                env::var(PORT_NAME).unwrap(),
+                name
+            ))
+            .header(TOKEN_HEADER_NAME, env::var(SESSION_TOKEN_NAME).unwrap())
+            .send()
+            .unwrap()
+            .json()
+            .unwrap()
+    }
+}
+
+#[derive(Deserialize)]
+pub struct Secret {
+    #[serde(rename = "SecretString")]
+    pub string: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use httpmock::MockServer;
+
+    use super::*;
+
+    #[test]
+    fn test_default_manager_get_single_secret() {
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method("GET")
+                .path("/secretsmanager/get")
+                .query_param("secretId", "some-secret");
+            then.status(200).body("{\"SecretString\": \"xyz\"}");
+        });
+
+        temp_env::with_vars(
+            vec![
+                (SESSION_TOKEN_NAME, Some("TOKEN")),
+                (PORT_NAME, Some(server.port().to_string().as_ref())),
+            ],
+            || {
+                let manager = Manager::default();
+
+                let secret_value = manager.get_secret(String::from("some-secret")).string;
+
+                assert_eq!(secret_value, String::from("xyz"));
+            },
+        );
+
+        mock.assert();
+    }
+}
