@@ -1,0 +1,30 @@
+name: test
+on: 
+  - push
+  - pull_request
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/cache@v3
+        id: cache
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+      - name: Install stable Rust
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: curl https://sh.rustup.rs -sSf | sh -s -- -y
+      - name: Fetch dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo fetch
+      - name: Build
+        run: cargo build --tests
+      - name: Test
+        run: cargo test
