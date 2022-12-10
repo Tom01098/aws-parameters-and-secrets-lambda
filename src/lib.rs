@@ -42,6 +42,8 @@ impl Manager {
             .context(
                 "could not communicate with the Secrets Manager extension (are you not running in AWS Lambda with the 'AWS-Parameters-and-Secrets-Lambda-Extension' version 2 layer?)"
             )?
+            .error_for_status()
+            .context("received an error response from the Secrets Manager extension")?
             .json()
             .context("invalid JSON received from Secrets Manager extension")
     }
@@ -144,5 +146,36 @@ mod tests {
                 err.to_string()
             );
         });
+    }
+
+    #[test]
+    fn test_default_manager_server_returns_non_200_status_code() {
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method("GET")
+                .path("/secretsmanager/get")
+                .query_param("secretId", "some-secret");
+            then.status(500);
+        });
+
+        temp_env::with_vars(
+            vec![
+                (SESSION_TOKEN_NAME, Some("TOKEN")),
+                (PORT_NAME, Some(server.port().to_string().as_ref())),
+            ],
+            || {
+                let manager = Manager::default();
+
+                let err = manager.get_secret(String::from("some-secret")).unwrap_err();
+
+                assert_eq!(
+                    "received an error response from the Secrets Manager extension",
+                    err.to_string()
+                )
+            },
+        );
+
+        mock.assert();
     }
 }
