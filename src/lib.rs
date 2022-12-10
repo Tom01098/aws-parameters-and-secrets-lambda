@@ -32,8 +32,7 @@ impl Manager {
 
         let port = env::var(PORT_NAME).unwrap_or_else(|_| String::from("2773"));
 
-        Ok(self
-            .client
+        self.client
             .get(format!(
                 "http://localhost:{}/secretsmanager/get?secretId={}",
                 port, name
@@ -42,7 +41,7 @@ impl Manager {
             .send()
             .unwrap()
             .json()
-            .unwrap())
+            .context("invalid JSON received from Secrets Manager extension")
     }
 }
 
@@ -98,5 +97,36 @@ mod tests {
             let source = err.source().unwrap().downcast_ref().unwrap();
             assert_eq!(VarError::NotPresent, *source);
         })
+    }
+
+    #[test]
+    fn test_default_manager_invalid_json() {
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method("GET")
+                .path("/secretsmanager/get")
+                .query_param("secretId", "some-secret");
+            then.status(200).body("{");
+        });
+
+        temp_env::with_vars(
+            vec![
+                (SESSION_TOKEN_NAME, Some("TOKEN")),
+                (PORT_NAME, Some(server.port().to_string().as_ref())),
+            ],
+            || {
+                let manager = Manager::default();
+
+                let err = manager.get_secret(String::from("some-secret")).unwrap_err();
+
+                assert_eq!(
+                    "invalid JSON received from Secrets Manager extension",
+                    err.to_string()
+                );
+            },
+        );
+
+        mock.assert();
     }
 }
