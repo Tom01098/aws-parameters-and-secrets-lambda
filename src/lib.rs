@@ -1,5 +1,6 @@
 use std::env;
 
+use anyhow::{Context, Result};
 use serde::Deserialize;
 
 const PORT_NAME: &str = "PARAMETERS_SECRETS_EXTENSION_HTTP_PORT";
@@ -23,22 +24,28 @@ impl Manager {
         }
     }
 
-    pub fn get_secret(&self, name: String) -> Secret {
-        self.client
+    pub fn get_secret(&self, name: String) -> Result<Secret> {
+        let token = env::var(SESSION_TOKEN_NAME).context(format!(
+            "'{}' not set (are you not running in AWS Lambda?)",
+            SESSION_TOKEN_NAME
+        ))?;
+
+        Ok(self
+            .client
             .get(format!(
                 "http://localhost:{}/secretsmanager/get?secretId={}",
                 env::var(PORT_NAME).unwrap(),
                 name
             ))
-            .header(TOKEN_HEADER_NAME, env::var(SESSION_TOKEN_NAME).unwrap())
+            .header(TOKEN_HEADER_NAME, token)
             .send()
             .unwrap()
             .json()
-            .unwrap()
+            .unwrap())
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct Secret {
     #[serde(rename = "SecretString")]
     pub string: String,
@@ -46,6 +53,8 @@ pub struct Secret {
 
 #[cfg(test)]
 mod tests {
+    use std::env::VarError;
+
     use httpmock::MockServer;
 
     use super::*;
@@ -69,12 +78,24 @@ mod tests {
             || {
                 let manager = Manager::default();
 
-                let secret_value = manager.get_secret(String::from("some-secret")).string;
+                let secret_value = manager
+                    .get_secret(String::from("some-secret"))
+                    .unwrap()
+                    .string;
 
-                assert_eq!(secret_value, String::from("xyz"));
+                assert_eq!(String::from("xyz"), secret_value);
             },
         );
 
         mock.assert();
+    }
+
+    #[test]
+    fn test_default_manager_no_session_token() {
+        temp_env::with_var(SESSION_TOKEN_NAME, None::<String>, || {
+            let err = Manager::default().get_secret(String::from("")).unwrap_err();
+            let source = err.source().unwrap().downcast_ref().unwrap();
+            assert_eq!(VarError::NotPresent, *source);
+        })
     }
 }
