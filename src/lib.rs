@@ -30,12 +30,13 @@ impl Manager {
             SESSION_TOKEN_NAME
         ))?;
 
+        let port = env::var(PORT_NAME).unwrap_or_else(|_| String::from("2773"));
+
         Ok(self
             .client
             .get(format!(
                 "http://localhost:{}/secretsmanager/get?secretId={}",
-                env::var(PORT_NAME).unwrap(),
-                name
+                port, name
             ))
             .header(TOKEN_HEADER_NAME, token)
             .send()
