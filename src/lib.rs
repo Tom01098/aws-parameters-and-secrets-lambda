@@ -39,7 +39,9 @@ impl Manager {
             ))
             .header(TOKEN_HEADER_NAME, token)
             .send()
-            .unwrap()
+            .context(
+                "could not communicate with the Secrets Manager extension (are you not running in AWS Lambda with the 'AWS-Parameters-and-Secrets-Lambda-Extension' version 2 layer?)"
+            )?
             .json()
             .context("invalid JSON received from Secrets Manager extension")
     }
@@ -128,5 +130,19 @@ mod tests {
         );
 
         mock.assert();
+    }
+
+    #[test]
+    fn test_default_manager_no_extension() {
+        temp_env::with_var(SESSION_TOKEN_NAME, Some("TOKEN"), || {
+            let manager = Manager::default();
+
+            let err = manager.get_secret(String::from("some-secret")).unwrap_err();
+
+            assert_eq!(
+                "could not communicate with the Secrets Manager extension (are you not running in AWS Lambda with the 'AWS-Parameters-and-Secrets-Lambda-Extension' version 2 layer?)",
+                err.to_string()
+            );
+        });
     }
 }
