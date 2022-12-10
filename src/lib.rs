@@ -1,5 +1,6 @@
 use std::env;
 
+use anyhow::{Context, Result};
 use serde::Deserialize;
 
 const PORT_NAME: &str = "PARAMETERS_SECRETS_EXTENSION_HTTP_PORT";
@@ -23,22 +24,32 @@ impl Manager {
         }
     }
 
-    pub fn get_secret(&self, name: String) -> Secret {
+    pub fn get_secret(&self, name: String) -> Result<Secret> {
+        let token = env::var(SESSION_TOKEN_NAME).context(format!(
+            "'{}' not set (are you not running in AWS Lambda?)",
+            SESSION_TOKEN_NAME
+        ))?;
+
+        let port = env::var(PORT_NAME).unwrap_or_else(|_| String::from("2773"));
+
         self.client
             .get(format!(
                 "http://localhost:{}/secretsmanager/get?secretId={}",
-                env::var(PORT_NAME).unwrap(),
-                name
+                port, name
             ))
-            .header(TOKEN_HEADER_NAME, env::var(SESSION_TOKEN_NAME).unwrap())
+            .header(TOKEN_HEADER_NAME, token)
             .send()
-            .unwrap()
+            .context(
+                "could not communicate with the Secrets Manager extension (are you not running in AWS Lambda with the 'AWS-Parameters-and-Secrets-Lambda-Extension' version 2 layer?)"
+            )?
+            .error_for_status()
+            .context("received an error response from the Secrets Manager extension")?
             .json()
-            .unwrap()
+            .context("invalid JSON received from Secrets Manager extension")
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct Secret {
     #[serde(rename = "SecretString")]
     pub string: String,
@@ -46,6 +57,8 @@ pub struct Secret {
 
 #[cfg(test)]
 mod tests {
+    use std::env::VarError;
+
     use httpmock::MockServer;
 
     use super::*;
@@ -69,9 +82,97 @@ mod tests {
             || {
                 let manager = Manager::default();
 
-                let secret_value = manager.get_secret(String::from("some-secret")).string;
+                let secret_value = manager
+                    .get_secret(String::from("some-secret"))
+                    .unwrap()
+                    .string;
 
-                assert_eq!(secret_value, String::from("xyz"));
+                assert_eq!(String::from("xyz"), secret_value);
+            },
+        );
+
+        mock.assert();
+    }
+
+    #[test]
+    fn test_default_manager_no_session_token() {
+        temp_env::with_var(SESSION_TOKEN_NAME, None::<String>, || {
+            let err = Manager::default().get_secret(String::from("")).unwrap_err();
+            let source = err.source().unwrap().downcast_ref().unwrap();
+            assert_eq!(VarError::NotPresent, *source);
+        })
+    }
+
+    #[test]
+    fn test_default_manager_invalid_json() {
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method("GET")
+                .path("/secretsmanager/get")
+                .query_param("secretId", "some-secret");
+            then.status(200).body("{");
+        });
+
+        temp_env::with_vars(
+            vec![
+                (SESSION_TOKEN_NAME, Some("TOKEN")),
+                (PORT_NAME, Some(server.port().to_string().as_ref())),
+            ],
+            || {
+                let manager = Manager::default();
+
+                let err = manager.get_secret(String::from("some-secret")).unwrap_err();
+
+                assert_eq!(
+                    "invalid JSON received from Secrets Manager extension",
+                    err.to_string()
+                );
+            },
+        );
+
+        mock.assert();
+    }
+
+    #[test]
+    fn test_default_manager_no_extension() {
+        temp_env::with_var(SESSION_TOKEN_NAME, Some("TOKEN"), || {
+            let manager = Manager::default();
+
+            let err = manager.get_secret(String::from("some-secret")).unwrap_err();
+
+            assert_eq!(
+                "could not communicate with the Secrets Manager extension (are you not running in AWS Lambda with the 'AWS-Parameters-and-Secrets-Lambda-Extension' version 2 layer?)",
+                err.to_string()
+            );
+        });
+    }
+
+    #[test]
+    fn test_default_manager_server_returns_non_200_status_code() {
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method("GET")
+                .path("/secretsmanager/get")
+                .query_param("secretId", "some-secret");
+            then.status(500);
+        });
+
+        temp_env::with_vars(
+            vec![
+                (SESSION_TOKEN_NAME, Some("TOKEN")),
+                (PORT_NAME, Some(server.port().to_string().as_ref())),
+            ],
+            || {
+                let manager = Manager::default();
+
+                let err = manager.get_secret(String::from("some-secret")).unwrap_err();
+
+                assert_eq!(
+                    "received an error response from the Secrets Manager extension",
+                    err.to_string()
+                )
             },
         );
 
