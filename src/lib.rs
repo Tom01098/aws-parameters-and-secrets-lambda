@@ -3,12 +3,16 @@ use std::{env, sync::Arc};
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
+use static_assertions::assert_impl_all;
 
 const PORT_NAME: &str = "PARAMETERS_SECRETS_EXTENSION_HTTP_PORT";
 const SESSION_TOKEN_NAME: &str = "AWS_SESSION_TOKEN";
 const TOKEN_HEADER_NAME: &str = "X-AWS-Parameters-Secrets-Token";
 
-#[derive(Debug)]
+assert_impl_all!(Manager: Send, Sync, Debug, Clone);
+assert_impl_all!(Secret: Send, Sync, Debug, Clone);
+
+#[derive(Debug, Clone)]
 pub struct Manager {
     connection: Arc<Connection>,
 }
@@ -64,7 +68,7 @@ impl Connection {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Secret {
     name: String,
     connection: Arc<Connection>,
