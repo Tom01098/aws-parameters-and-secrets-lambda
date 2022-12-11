@@ -7,6 +7,7 @@ edition = "2021"
 anyhow = "1"
 reqwest = { version = "0.11", features = ["blocking", "json"] }
 serde = { version = "1", features = ["derive"] }
+static_assertions = "1"
 
 [dev-dependencies]
 httpmock = "0.6"
