@@ -12,6 +12,7 @@ const TOKEN_HEADER_NAME: &str = "X-AWS-Parameters-Secrets-Token";
 
 assert_impl_all!(Manager: Send, Sync, Debug, Clone);
 assert_impl_all!(Secret: Send, Sync, Debug, Clone);
+assert_impl_all!(VersionIdQuery: Send, Sync, Debug, Clone);
 
 #[derive(Debug, Clone)]
 pub struct Manager {
@@ -114,6 +115,28 @@ impl Query for String {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct VersionIdQuery {
+    secret_id: String,
+    version_id: String,
+}
+
+impl VersionIdQuery {
+    pub fn new(secret_id: String, version_id: String) -> Self {
+        Self {
+            secret_id,
+            version_id,
+        }
+    }
+}
+
+#[sealed]
+impl Query for VersionIdQuery {
+    fn get_query_string(&self) -> String {
+        format!("secretId={}&versionId={}", self.secret_id, self.version_id)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::env::VarError;
@@ -144,6 +167,43 @@ mod tests {
                 let secret_value = manager
                     .unwrap()
                     .get_secret("some-secret")
+                    .unwrap()
+                    .get_raw()
+                    .unwrap();
+
+                assert_eq!(String::from("xyz"), secret_value);
+            },
+        );
+
+        mock.assert();
+    }
+
+    #[test]
+    fn test_manager_get_single_secret_from_version_id() {
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method("GET")
+                .path("/secretsmanager/get")
+                .query_param("secretId", "some-secret")
+                .query_param("versionId", "some-version");
+            then.status(200).body("{\"SecretString\": \"xyz\"}");
+        });
+
+        temp_env::with_vars(
+            vec![
+                (SESSION_TOKEN_NAME, Some("TOKEN")),
+                (PORT_NAME, Some(server.port().to_string().as_ref())),
+            ],
+            || {
+                let manager = Manager::new();
+
+                let secret_value = manager
+                    .unwrap()
+                    .get_secret(VersionIdQuery::new(
+                        String::from("some-secret"),
+                        String::from("some-version"),
+                    ))
                     .unwrap()
                     .get_raw()
                     .unwrap();
