@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::{env, sync::Arc};
 
 use anyhow::{Context, Result};
+use sealed::sealed;
 use serde::Deserialize;
 use static_assertions::assert_impl_all;
 
@@ -33,9 +34,9 @@ impl Manager {
         })
     }
 
-    pub fn get_secret(&self, name: String) -> Result<Secret> {
+    pub fn get_secret(&self, query: impl Query) -> Result<Secret> {
         Ok(Secret {
-            name,
+            query: query.get_query_string(),
             connection: self.connection.clone(),
         })
     }
@@ -49,11 +50,11 @@ struct Connection {
 }
 
 impl Connection {
-    fn get_secret(&self, name: &str) -> Result<String> {
+    fn get_secret(&self, query: &str) -> Result<String> {
         Ok(self.client
             .get(format!(
-                "http://localhost:{}/secretsmanager/get?secretId={}",
-                self.port, name
+                "http://localhost:{}/secretsmanager/get?{}",
+                self.port, query
             ))
             .header(TOKEN_HEADER_NAME, &self.token)
             .send()
@@ -70,19 +71,19 @@ impl Connection {
 
 #[derive(Debug, Clone)]
 pub struct Secret {
-    name: String,
+    query: String,
     connection: Arc<Connection>,
 }
 
 impl Secret {
     pub fn get_raw(&self) -> Result<String> {
-        self.connection.get_secret(&self.name)
+        self.connection.get_secret(&self.query)
     }
 }
 
 impl PartialEq for Secret {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
+        self.query == other.query
     }
 }
 
@@ -92,6 +93,25 @@ impl Eq for Secret {}
 pub struct ExtensionResponse {
     #[serde(rename = "SecretString")]
     secret_string: String,
+}
+
+#[sealed]
+pub trait Query {
+    fn get_query_string(&self) -> String;
+}
+
+#[sealed]
+impl Query for &str {
+    fn get_query_string(&self) -> String {
+        format!("secretId={}", self)
+    }
+}
+
+#[sealed]
+impl Query for String {
+    fn get_query_string(&self) -> String {
+        format!("secretId={}", self)
+    }
 }
 
 #[cfg(test)]
@@ -123,7 +143,7 @@ mod tests {
 
                 let secret_value = manager
                     .unwrap()
-                    .get_secret(String::from("some-secret"))
+                    .get_secret("some-secret")
                     .unwrap()
                     .get_raw()
                     .unwrap();
@@ -164,7 +184,7 @@ mod tests {
                 let manager = Manager::new().unwrap();
 
                 let err = manager
-                    .get_secret(String::from("some-secret"))
+                    .get_secret("some-secret")
                     .unwrap()
                     .get_raw()
                     .unwrap_err();
@@ -185,7 +205,7 @@ mod tests {
             let manager = Manager::new().unwrap();
 
             let err = manager
-                .get_secret(String::from("some-secret"))
+                .get_secret("some-secret")
                 .unwrap()
                 .get_raw()
                 .unwrap_err();
