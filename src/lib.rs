@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::{env, sync::Arc};
 
 use anyhow::{Context, Result};
+use sealed::sealed;
 use serde::Deserialize;
 use static_assertions::assert_impl_all;
 
@@ -11,6 +12,8 @@ const TOKEN_HEADER_NAME: &str = "X-AWS-Parameters-Secrets-Token";
 
 assert_impl_all!(Manager: Send, Sync, Debug, Clone);
 assert_impl_all!(Secret: Send, Sync, Debug, Clone);
+assert_impl_all!(VersionIdQuery: Send, Sync, Debug, Clone);
+assert_impl_all!(VersionStageQuery: Send, Sync, Debug, Clone);
 
 #[derive(Debug, Clone)]
 pub struct Manager {
@@ -33,9 +36,9 @@ impl Manager {
         })
     }
 
-    pub fn get_secret(&self, name: String) -> Result<Secret> {
+    pub fn get_secret(&self, query: impl Query) -> Result<Secret> {
         Ok(Secret {
-            name,
+            query: query.get_query_string(),
             connection: self.connection.clone(),
         })
     }
@@ -49,11 +52,11 @@ struct Connection {
 }
 
 impl Connection {
-    fn get_secret(&self, name: &str) -> Result<String> {
+    fn get_secret(&self, query: &str) -> Result<String> {
         Ok(self.client
             .get(format!(
-                "http://localhost:{}/secretsmanager/get?secretId={}",
-                self.port, name
+                "http://localhost:{}/secretsmanager/get?{}",
+                self.port, query
             ))
             .header(TOKEN_HEADER_NAME, &self.token)
             .send()
@@ -70,19 +73,19 @@ impl Connection {
 
 #[derive(Debug, Clone)]
 pub struct Secret {
-    name: String,
+    query: String,
     connection: Arc<Connection>,
 }
 
 impl Secret {
     pub fn get_raw(&self) -> Result<String> {
-        self.connection.get_secret(&self.name)
+        self.connection.get_secret(&self.query)
     }
 }
 
 impl PartialEq for Secret {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
+        self.query == other.query
     }
 }
 
@@ -92,6 +95,69 @@ impl Eq for Secret {}
 pub struct ExtensionResponse {
     #[serde(rename = "SecretString")]
     secret_string: String,
+}
+
+#[sealed]
+pub trait Query {
+    fn get_query_string(&self) -> String;
+}
+
+#[sealed]
+impl Query for &str {
+    fn get_query_string(&self) -> String {
+        format!("secretId={}", self)
+    }
+}
+
+#[sealed]
+impl Query for String {
+    fn get_query_string(&self) -> String {
+        format!("secretId={}", self)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct VersionIdQuery {
+    secret_id: String,
+    version_id: String,
+}
+
+impl VersionIdQuery {
+    pub fn new(secret_id: String, version_id: String) -> Self {
+        Self {
+            secret_id,
+            version_id,
+        }
+    }
+}
+
+#[sealed]
+impl Query for VersionIdQuery {
+    fn get_query_string(&self) -> String {
+        format!("secretId={}&versionId={}", self.secret_id, self.version_id)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct VersionStageQuery {
+    secret_id: String,
+    version_stage: String,
+}
+
+impl VersionStageQuery {
+    pub fn new(secret_id: String, version_stage: String) -> Self {
+        Self {
+            secret_id,
+            version_stage,
+        }
+    }
+}
+
+#[sealed]
+impl Query for VersionStageQuery {
+    fn get_query_string(&self) -> String {
+        format!("secretId={}&versionStage={}", self.secret_id, self.version_stage)
+    }
 }
 
 #[cfg(test)]
@@ -123,7 +189,81 @@ mod tests {
 
                 let secret_value = manager
                     .unwrap()
-                    .get_secret(String::from("some-secret"))
+                    .get_secret("some-secret")
+                    .unwrap()
+                    .get_raw()
+                    .unwrap();
+
+                assert_eq!(String::from("xyz"), secret_value);
+            },
+        );
+
+        mock.assert();
+    }
+
+    #[test]
+    fn test_manager_get_single_secret_from_version_id() {
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method("GET")
+                .path("/secretsmanager/get")
+                .query_param("secretId", "some-secret")
+                .query_param("versionId", "some-version");
+            then.status(200).body("{\"SecretString\": \"xyz\"}");
+        });
+
+        temp_env::with_vars(
+            vec![
+                (SESSION_TOKEN_NAME, Some("TOKEN")),
+                (PORT_NAME, Some(server.port().to_string().as_ref())),
+            ],
+            || {
+                let manager = Manager::new();
+
+                let secret_value = manager
+                    .unwrap()
+                    .get_secret(VersionIdQuery::new(
+                        String::from("some-secret"),
+                        String::from("some-version"),
+                    ))
+                    .unwrap()
+                    .get_raw()
+                    .unwrap();
+
+                assert_eq!(String::from("xyz"), secret_value);
+            },
+        );
+
+        mock.assert();
+    }
+
+    #[test]
+    fn test_manager_get_single_secret_from_version_stage() {
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method("GET")
+                .path("/secretsmanager/get")
+                .query_param("secretId", "some-secret")
+                .query_param("versionStage", "some-stage");
+            then.status(200).body("{\"SecretString\": \"xyz\"}");
+        });
+
+        temp_env::with_vars(
+            vec![
+                (SESSION_TOKEN_NAME, Some("TOKEN")),
+                (PORT_NAME, Some(server.port().to_string().as_ref())),
+            ],
+            || {
+                let manager = Manager::new();
+
+                let secret_value = manager
+                    .unwrap()
+                    .get_secret(VersionStageQuery::new(
+                        String::from("some-secret"),
+                        String::from("some-stage"),
+                    ))
                     .unwrap()
                     .get_raw()
                     .unwrap();
@@ -164,7 +304,7 @@ mod tests {
                 let manager = Manager::new().unwrap();
 
                 let err = manager
-                    .get_secret(String::from("some-secret"))
+                    .get_secret("some-secret")
                     .unwrap()
                     .get_raw()
                     .unwrap_err();
@@ -185,7 +325,7 @@ mod tests {
             let manager = Manager::new().unwrap();
 
             let err = manager
-                .get_secret(String::from("some-secret"))
+                .get_secret("some-secret")
                 .unwrap()
                 .get_raw()
                 .unwrap_err();
