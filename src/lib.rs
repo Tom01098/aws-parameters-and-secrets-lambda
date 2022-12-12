@@ -13,6 +13,7 @@ const TOKEN_HEADER_NAME: &str = "X-AWS-Parameters-Secrets-Token";
 assert_impl_all!(Manager: Send, Sync, Debug, Clone);
 assert_impl_all!(Secret: Send, Sync, Debug, Clone);
 assert_impl_all!(VersionIdQuery: Send, Sync, Debug, Clone);
+assert_impl_all!(VersionStageQuery: Send, Sync, Debug, Clone);
 
 #[derive(Debug, Clone)]
 pub struct Manager {
@@ -137,6 +138,28 @@ impl Query for VersionIdQuery {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct VersionStageQuery {
+    secret_id: String,
+    version_stage: String,
+}
+
+impl VersionStageQuery {
+    pub fn new(secret_id: String, version_stage: String) -> Self {
+        Self {
+            secret_id,
+            version_stage,
+        }
+    }
+}
+
+#[sealed]
+impl Query for VersionStageQuery {
+    fn get_query_string(&self) -> String {
+        format!("secretId={}&versionStage={}", self.secret_id, self.version_stage)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::env::VarError;
@@ -203,6 +226,43 @@ mod tests {
                     .get_secret(VersionIdQuery::new(
                         String::from("some-secret"),
                         String::from("some-version"),
+                    ))
+                    .unwrap()
+                    .get_raw()
+                    .unwrap();
+
+                assert_eq!(String::from("xyz"), secret_value);
+            },
+        );
+
+        mock.assert();
+    }
+
+    #[test]
+    fn test_manager_get_single_secret_from_version_stage() {
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method("GET")
+                .path("/secretsmanager/get")
+                .query_param("secretId", "some-secret")
+                .query_param("versionStage", "some-stage");
+            then.status(200).body("{\"SecretString\": \"xyz\"}");
+        });
+
+        temp_env::with_vars(
+            vec![
+                (SESSION_TOKEN_NAME, Some("TOKEN")),
+                (PORT_NAME, Some(server.port().to_string().as_ref())),
+            ],
+            || {
+                let manager = Manager::new();
+
+                let secret_value = manager
+                    .unwrap()
+                    .get_secret(VersionStageQuery::new(
+                        String::from("some-secret"),
+                        String::from("some-stage"),
                     ))
                     .unwrap()
                     .get_raw()
