@@ -102,6 +102,30 @@ pub trait Query {
     fn get_query_string(&self) -> String;
 }
 
+pub struct QueryBuilder {
+    secret_id: String,
+}
+
+impl QueryBuilder {
+    pub fn new(secret_id: String) -> Self {
+        Self { secret_id }
+    }
+
+    pub fn with_version_id(self, version_id: String) -> VersionIdQuery {
+        VersionIdQuery {
+            secret_id: self.secret_id,
+            version_id,
+        }
+    }
+
+    pub fn with_version_stage(self, version_stage: String) -> VersionStageQuery {
+        VersionStageQuery {
+            secret_id: self.secret_id,
+            version_stage,
+        }
+    }
+}
+
 #[sealed]
 impl Query for &str {
     fn get_query_string(&self) -> String {
@@ -122,15 +146,6 @@ pub struct VersionIdQuery {
     version_id: String,
 }
 
-impl VersionIdQuery {
-    pub fn new(secret_id: String, version_id: String) -> Self {
-        Self {
-            secret_id,
-            version_id,
-        }
-    }
-}
-
 #[sealed]
 impl Query for VersionIdQuery {
     fn get_query_string(&self) -> String {
@@ -142,15 +157,6 @@ impl Query for VersionIdQuery {
 pub struct VersionStageQuery {
     secret_id: String,
     version_stage: String,
-}
-
-impl VersionStageQuery {
-    pub fn new(secret_id: String, version_stage: String) -> Self {
-        Self {
-            secret_id,
-            version_stage,
-        }
-    }
 }
 
 #[sealed]
@@ -226,10 +232,10 @@ mod tests {
 
                 let secret_value = manager
                     .unwrap()
-                    .get_secret(VersionIdQuery::new(
-                        String::from("some-secret"),
-                        String::from("some-version"),
-                    ))
+                    .get_secret(
+                        QueryBuilder::new(String::from("some-secret"))
+                            .with_version_id(String::from("some-version")),
+                    )
                     .unwrap()
                     .get_raw()
                     .unwrap();
@@ -263,10 +269,10 @@ mod tests {
 
                 let secret_value = manager
                     .unwrap()
-                    .get_secret(VersionStageQuery::new(
-                        String::from("some-secret"),
-                        String::from("some-stage"),
-                    ))
+                    .get_secret(
+                        QueryBuilder::new(String::from("some-secret"))
+                            .with_version_stage(String::from("some-stage")),
+                    )
                     .unwrap()
                     .get_raw()
                     .unwrap();
