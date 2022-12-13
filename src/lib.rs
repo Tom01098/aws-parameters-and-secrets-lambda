@@ -92,7 +92,7 @@ impl PartialEq for Secret {
 impl Eq for Secret {}
 
 #[derive(Deserialize)]
-pub struct ExtensionResponse {
+struct ExtensionResponse {
     #[serde(rename = "SecretString")]
     secret_string: String,
 }
