@@ -156,7 +156,10 @@ impl VersionStageQuery {
 #[sealed]
 impl Query for VersionStageQuery {
     fn get_query_string(&self) -> String {
-        format!("secretId={}&versionStage={}", self.secret_id, self.version_stage)
+        format!(
+            "secretId={}&versionStage={}",
+            self.secret_id, self.version_stage
+        )
     }
 }
 
