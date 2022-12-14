@@ -23,12 +23,13 @@ pub struct Manager {
 impl Manager {
     pub fn new() -> Result<Self> {
         let port = match env::var(PORT_NAME) {
-            Ok(port) => port.parse().context(format!("'{port}' is not a valid port"))?,
+            Ok(port) => port
+                .parse()
+                .context(format!("'{port}' is not a valid port"))?,
             Err(_) => 2773,
         };
         let token = env::var(SESSION_TOKEN_NAME).context(format!(
-            "'{}' not set (are you not running in AWS Lambda?)",
-            SESSION_TOKEN_NAME
+            "'{SESSION_TOKEN_NAME}' not set (are you not running in AWS Lambda?)",
         ))?;
         Ok(Self {
             connection: Arc::new(Connection {
@@ -57,10 +58,7 @@ struct Connection {
 impl Connection {
     fn get_secret(&self, query: &str) -> Result<String> {
         Ok(self.client
-            .get(format!(
-                "http://localhost:{}/secretsmanager/get?{}",
-                self.port, query
-            ))
+            .get(format!("http://localhost:{port}/secretsmanager/get?{query}", port = self.port))
             .header(TOKEN_HEADER_NAME, &self.token)
             .send()
             .context(
@@ -132,14 +130,14 @@ impl QueryBuilder {
 #[sealed]
 impl Query for &str {
     fn get_query_string(&self) -> String {
-        format!("secretId={}", self)
+        format!("secretId={self}")
     }
 }
 
 #[sealed]
 impl Query for String {
     fn get_query_string(&self) -> String {
-        format!("secretId={}", self)
+        format!("secretId={self}")
     }
 }
 
@@ -393,11 +391,9 @@ mod tests {
             ],
             || {
                 let err = Manager::new().unwrap_err();
-                assert_eq!(
-                    "'xyz' is not a valid port",
-                    err.to_string()
-                )
-            })
+                assert_eq!("'xyz' is not a valid port", err.to_string())
+            },
+        )
     }
 
     #[test]
@@ -409,11 +405,9 @@ mod tests {
             ],
             || {
                 let err = Manager::new().unwrap_err();
-                assert_eq!(
-                    "'70000' is not a valid port",
-                    err.to_string()
-                )
-            })
+                assert_eq!("'70000' is not a valid port", err.to_string())
+            },
+        )
     }
 
     #[test]
