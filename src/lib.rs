@@ -127,16 +127,9 @@ impl QueryBuilder {
 }
 
 #[sealed]
-impl Query for &str {
+impl<T: AsRef<str>> Query for T {
     fn get_query_string(&self) -> String {
-        format!("secretId={}", self)
-    }
-}
-
-#[sealed]
-impl Query for String {
-    fn get_query_string(&self) -> String {
-        format!("secretId={}", self)
+        format!("secretId={}", self.as_ref())
     }
 }
 
