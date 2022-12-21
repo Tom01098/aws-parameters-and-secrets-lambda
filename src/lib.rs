@@ -22,10 +22,14 @@ pub struct Manager {
 
 impl Manager {
     pub fn new() -> Result<Self> {
-        let port = env::var(PORT_NAME).unwrap_or_else(|_| String::from("2773"));
+        let port = match env::var(PORT_NAME) {
+            Ok(port) => port
+                .parse()
+                .context(format!("'{port}' is not a valid port"))?,
+            Err(_) => 2773,
+        };
         let token = env::var(SESSION_TOKEN_NAME).context(format!(
-            "'{}' not set (are you not running in AWS Lambda?)",
-            SESSION_TOKEN_NAME
+            "'{SESSION_TOKEN_NAME}' not set (are you not running in AWS Lambda?)",
         ))?;
         Ok(Self {
             connection: Arc::new(Connection {
@@ -47,17 +51,14 @@ impl Manager {
 #[derive(Debug)]
 struct Connection {
     client: reqwest::blocking::Client,
-    port: String,
+    port: u16,
     token: String,
 }
 
 impl Connection {
     fn get_secret(&self, query: &str) -> Result<String> {
         Ok(self.client
-            .get(format!(
-                "http://localhost:{}/secretsmanager/get?{}",
-                self.port, query
-            ))
+            .get(format!("http://localhost:{port}/secretsmanager/get?{query}", port = self.port))
             .header(TOKEN_HEADER_NAME, &self.token)
             .send()
             .context(
@@ -127,16 +128,9 @@ impl QueryBuilder {
 }
 
 #[sealed]
-impl Query for &str {
+impl<T: AsRef<str>> Query for T {
     fn get_query_string(&self) -> String {
-        format!("secretId={}", self)
-    }
-}
-
-#[sealed]
-impl Query for String {
-    fn get_query_string(&self) -> String {
-        format!("secretId={}", self)
+        format!("secretId={}", self.as_ref())
     }
 }
 
@@ -379,5 +373,41 @@ mod tests {
         );
 
         mock.assert();
+    }
+
+    #[test]
+    fn test_manager_fails_when_port_is_not_an_integer() {
+        temp_env::with_vars(
+            vec![
+                (SESSION_TOKEN_NAME, Some("TOKEN")),
+                (PORT_NAME, Some("xyz")),
+            ],
+            || {
+                let err = Manager::new().unwrap_err();
+                assert_eq!("'xyz' is not a valid port", err.to_string())
+            },
+        )
+    }
+
+    #[test]
+    fn test_manager_fails_when_port_is_not_a_u16() {
+        temp_env::with_vars(
+            vec![
+                (SESSION_TOKEN_NAME, Some("TOKEN")),
+                (PORT_NAME, Some("70000")),
+            ],
+            || {
+                let err = Manager::new().unwrap_err();
+                assert_eq!("'70000' is not a valid port", err.to_string())
+            },
+        )
+    }
+
+    #[test]
+    fn test_manager_default_port_is_2773() {
+        temp_env::with_var(SESSION_TOKEN_NAME, Some("TOKEN"), || {
+            let manager = Manager::new().unwrap();
+            assert_eq!(2773, manager.connection.port);
+        })
     }
 }
