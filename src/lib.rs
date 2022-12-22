@@ -40,11 +40,11 @@ impl Manager {
         })
     }
 
-    pub fn get_secret(&self, query: impl Query) -> Result<Secret> {
-        Ok(Secret {
+    pub fn get_secret(&self, query: impl Query) -> Secret {
+        Secret {
             query: query.get_query_string(),
             connection: self.connection.clone(),
-        })
+        }
     }
 }
 
@@ -103,23 +103,23 @@ pub trait Query {
     fn get_query_string(&self) -> String;
 }
 
-pub struct QueryBuilder {
-    secret_id: String,
+pub struct QueryBuilder<'a> {
+    secret_id: &'a str,
 }
 
-impl QueryBuilder {
-    pub fn new(secret_id: String) -> Self {
+impl<'a> QueryBuilder<'a> {
+    pub fn new(secret_id: &'a str) -> Self {
         Self { secret_id }
     }
 
-    pub fn with_version_id(self, version_id: String) -> VersionIdQuery {
+    pub fn with_version_id(self, version_id: &'a str) -> VersionIdQuery<'a> {
         VersionIdQuery {
             secret_id: self.secret_id,
             version_id,
         }
     }
 
-    pub fn with_version_stage(self, version_stage: String) -> VersionStageQuery {
+    pub fn with_version_stage(self, version_stage: &'a str) -> VersionStageQuery<'a> {
         VersionStageQuery {
             secret_id: self.secret_id,
             version_stage,
@@ -135,26 +135,26 @@ impl<T: AsRef<str>> Query for T {
 }
 
 #[derive(Debug, Clone)]
-pub struct VersionIdQuery {
-    secret_id: String,
-    version_id: String,
+pub struct VersionIdQuery<'a> {
+    secret_id: &'a str,
+    version_id: &'a str,
 }
 
 #[sealed]
-impl Query for VersionIdQuery {
+impl Query for VersionIdQuery<'_> {
     fn get_query_string(&self) -> String {
         format!("secretId={}&versionId={}", self.secret_id, self.version_id)
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct VersionStageQuery {
-    secret_id: String,
-    version_stage: String,
+pub struct VersionStageQuery<'a> {
+    secret_id: &'a str,
+    version_stage: &'a str,
 }
 
 #[sealed]
-impl Query for VersionStageQuery {
+impl Query for VersionStageQuery<'_> {
     fn get_query_string(&self) -> String {
         format!(
             "secretId={}&versionStage={}",
@@ -193,7 +193,6 @@ mod tests {
                 let secret_value = manager
                     .unwrap()
                     .get_secret("some-secret")
-                    .unwrap()
                     .get_raw()
                     .unwrap();
 
@@ -227,10 +226,9 @@ mod tests {
                 let secret_value = manager
                     .unwrap()
                     .get_secret(
-                        QueryBuilder::new(String::from("some-secret"))
-                            .with_version_id(String::from("some-version")),
+                        QueryBuilder::new("some-secret")
+                            .with_version_id("some-version"),
                     )
-                    .unwrap()
                     .get_raw()
                     .unwrap();
 
@@ -264,10 +262,9 @@ mod tests {
                 let secret_value = manager
                     .unwrap()
                     .get_secret(
-                        QueryBuilder::new(String::from("some-secret"))
-                            .with_version_stage(String::from("some-stage")),
+                        QueryBuilder::new("some-secret")
+                            .with_version_stage("some-stage"),
                     )
-                    .unwrap()
                     .get_raw()
                     .unwrap();
 
@@ -308,7 +305,6 @@ mod tests {
 
                 let err = manager
                     .get_secret("some-secret")
-                    .unwrap()
                     .get_raw()
                     .unwrap_err();
 
@@ -329,7 +325,6 @@ mod tests {
 
             let err = manager
                 .get_secret("some-secret")
-                .unwrap()
                 .get_raw()
                 .unwrap_err();
 
@@ -361,7 +356,6 @@ mod tests {
 
                 let err = manager
                     .get_secret(String::from("some-secret"))
-                    .unwrap()
                     .get_raw()
                     .unwrap_err();
 
