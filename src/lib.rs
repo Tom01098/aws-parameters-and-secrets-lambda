@@ -40,11 +40,11 @@ impl Manager {
         })
     }
 
-    pub fn get_secret(&self, query: impl Query) -> Result<Secret> {
-        Ok(Secret {
+    pub fn get_secret(&self, query: impl Query) -> Secret {
+        Secret {
             query: query.get_query_string(),
             connection: self.connection.clone(),
-        })
+        }
     }
 }
 
@@ -193,7 +193,6 @@ mod tests {
                 let secret_value = manager
                     .unwrap()
                     .get_secret("some-secret")
-                    .unwrap()
                     .get_raw()
                     .unwrap();
 
@@ -230,7 +229,6 @@ mod tests {
                         QueryBuilder::new("some-secret")
                             .with_version_id("some-version"),
                     )
-                    .unwrap()
                     .get_raw()
                     .unwrap();
 
@@ -267,7 +265,6 @@ mod tests {
                         QueryBuilder::new("some-secret")
                             .with_version_stage("some-stage"),
                     )
-                    .unwrap()
                     .get_raw()
                     .unwrap();
 
@@ -308,7 +305,6 @@ mod tests {
 
                 let err = manager
                     .get_secret("some-secret")
-                    .unwrap()
                     .get_raw()
                     .unwrap_err();
 
@@ -329,7 +325,6 @@ mod tests {
 
             let err = manager
                 .get_secret("some-secret")
-                .unwrap()
                 .get_raw()
                 .unwrap_err();
 
@@ -361,7 +356,6 @@ mod tests {
 
                 let err = manager
                     .get_secret(String::from("some-secret"))
-                    .unwrap()
                     .get_raw()
                     .unwrap_err();
 
