@@ -188,10 +188,9 @@ mod tests {
                 (PORT_NAME, Some(server.port().to_string().as_ref())),
             ],
             || {
-                let manager = Manager::new();
+                let manager = Manager::new().unwrap();
 
                 let secret_value = manager
-                    .unwrap()
                     .get_secret("some-secret")
                     .get_raw()
                     .unwrap();
@@ -221,10 +220,9 @@ mod tests {
                 (PORT_NAME, Some(server.port().to_string().as_ref())),
             ],
             || {
-                let manager = Manager::new();
+                let manager = Manager::new().unwrap();
 
                 let secret_value = manager
-                    .unwrap()
                     .get_secret(
                         QueryBuilder::new("some-secret")
                             .with_version_id("some-version"),
@@ -257,10 +255,9 @@ mod tests {
                 (PORT_NAME, Some(server.port().to_string().as_ref())),
             ],
             || {
-                let manager = Manager::new();
+                let manager = Manager::new().unwrap();
 
                 let secret_value = manager
-                    .unwrap()
                     .get_secret(
                         QueryBuilder::new("some-secret")
                             .with_version_stage("some-stage"),
