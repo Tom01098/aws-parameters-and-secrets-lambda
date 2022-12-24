@@ -4,6 +4,7 @@ use std::{env, sync::Arc};
 use anyhow::{anyhow, Context, Result};
 use sealed::sealed;
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use static_assertions::assert_impl_all;
 
@@ -96,6 +97,11 @@ impl Secret {
             anyhow!("'{name}' was in the response from the extension, but it was not a string")
         })?;
         Ok(String::from(secret))
+    }
+
+    pub fn get_typed<T: DeserializeOwned>(&self) -> Result<T> {
+        let raw = self.get_raw()?;
+        Ok(serde_json::from_str(&raw)?)
     }
 }
 
@@ -304,6 +310,43 @@ mod tests {
                     .unwrap();
 
                 assert_eq!(String::from("value"), secret_value);
+            },
+        );
+
+        mock.assert();
+    }
+
+    #[test]
+    fn test_manager_get_typed_secret() {
+        #[derive(Deserialize, Debug, PartialEq)]
+        struct SecretType {
+            name: String
+        }
+
+        let server = MockServer::start();
+
+        let mock = server.mock(|when, then| {
+            when.method("GET")
+                .path("/secretsmanager/get")
+                .query_param("secretId", "some-secret");
+            then.status(200)
+                .body("{\"SecretString\": \"{\\\"name\\\": \\\"value\\\"}\"}");
+        });
+
+        temp_env::with_vars(
+            vec![
+                (SESSION_TOKEN_NAME, Some("TOKEN")),
+                (PORT_NAME, Some(server.port().to_string().as_ref())),
+            ],
+            || {
+                let manager = Manager::new().unwrap();
+
+                let secret_value = manager
+                    .get_secret("some-secret")
+                    .get_typed()
+                    .unwrap();
+
+                assert_eq!(SecretType { name: String::from("value") }, secret_value);
             },
         );
 
