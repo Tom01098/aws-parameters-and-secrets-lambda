@@ -172,7 +172,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_manager_get_single_secret() {
+    fn test_manager_get_raw_secret() {
         let server = MockServer::start();
 
         let mock = server.mock(|when, then| {
@@ -204,7 +204,7 @@ mod tests {
     }
 
     #[test]
-    fn test_manager_get_single_secret_from_version_id() {
+    fn test_manager_get_raw_secret_from_version_id() {
         let server = MockServer::start();
 
         let mock = server.mock(|when, then| {
@@ -240,7 +240,7 @@ mod tests {
     }
 
     #[test]
-    fn test_manager_get_single_secret_from_version_stage() {
+    fn test_manager_get_raw_secret_from_version_stage() {
         let server = MockServer::start();
 
         let mock = server.mock(|when, then| {
