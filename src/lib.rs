@@ -3,8 +3,8 @@ use std::{env, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use sealed::sealed;
-use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde::Deserialize;
 use serde_json::Value;
 use static_assertions::assert_impl_all;
 
@@ -186,171 +186,183 @@ impl Query for VersionStageQuery<'_> {
 
 #[cfg(test)]
 mod tests {
-    use std::env::VarError;
+    use std::{collections::HashMap, env::VarError};
 
     use httpmock::MockServer;
 
+    use maplit::hashmap;
+
     use super::*;
 
-    #[test]
-    fn test_manager_get_raw_secret() {
+    struct MockServerConfig<'a> {
+        query: HashMap<&'a str, &'a str>,
+        status: u16,
+        response: &'a str,
+    }
+
+    fn with_mock_server(config: MockServerConfig, f: impl FnOnce(u16)) {
         let server = MockServer::start();
 
         let mock = server.mock(|when, then| {
-            when.method("GET")
-                .path("/secretsmanager/get")
-                .query_param("secretId", "some-secret");
-            then.status(200).body("{\"SecretString\": \"xyz\"}");
+            let mut when = when.method("GET").path("/secretsmanager/get");
+
+            for (name, value) in config.query {
+                when = when.query_param(name, value);
+            }
+            then.status(config.status).body(config.response);
         });
 
-        temp_env::with_vars(
-            vec![
-                (SESSION_TOKEN_NAME, Some("TOKEN")),
-                (PORT_NAME, Some(server.port().to_string().as_ref())),
-            ],
-            || {
-                let manager = Manager::new().unwrap();
-
-                let secret_value = manager.get_secret("some-secret").get_raw().unwrap();
-
-                assert_eq!(String::from("xyz"), secret_value);
-            },
-        );
+        f(server.port());
 
         mock.assert();
+    }
+
+    #[test]
+    fn test_manager_get_raw_secret() {
+        let config = MockServerConfig {
+            query: hashmap! {"secretId" => "some-secret"},
+            status: 200,
+            response: "{\"SecretString\": \"xyz\"}",
+        };
+
+        with_mock_server(config, |port| {
+            temp_env::with_vars(
+                vec![
+                    (SESSION_TOKEN_NAME, Some("TOKEN")),
+                    (PORT_NAME, Some(&port.to_string())),
+                ],
+                || {
+                    let manager = Manager::new().unwrap();
+
+                    let secret_value = manager.get_secret("some-secret").get_raw().unwrap();
+
+                    assert_eq!(String::from("xyz"), secret_value);
+                },
+            );
+        })
     }
 
     #[test]
     fn test_manager_get_raw_secret_from_version_id() {
-        let server = MockServer::start();
+        let config = MockServerConfig {
+            query: hashmap! {"secretId" => "some-secret", "versionId" => "some-version"},
+            status: 200,
+            response: "{\"SecretString\": \"xyz\"}",
+        };
 
-        let mock = server.mock(|when, then| {
-            when.method("GET")
-                .path("/secretsmanager/get")
-                .query_param("secretId", "some-secret")
-                .query_param("versionId", "some-version");
-            then.status(200).body("{\"SecretString\": \"xyz\"}");
+        with_mock_server(config, |port| {
+            temp_env::with_vars(
+                vec![
+                    (SESSION_TOKEN_NAME, Some("TOKEN")),
+                    (PORT_NAME, Some(&port.to_string())),
+                ],
+                || {
+                    let manager = Manager::new().unwrap();
+
+                    let secret_value = manager
+                        .get_secret(
+                            QueryBuilder::new("some-secret").with_version_id("some-version"),
+                        )
+                        .get_raw()
+                        .unwrap();
+
+                    assert_eq!(String::from("xyz"), secret_value);
+                },
+            );
         });
-
-        temp_env::with_vars(
-            vec![
-                (SESSION_TOKEN_NAME, Some("TOKEN")),
-                (PORT_NAME, Some(server.port().to_string().as_ref())),
-            ],
-            || {
-                let manager = Manager::new().unwrap();
-
-                let secret_value = manager
-                    .get_secret(QueryBuilder::new("some-secret").with_version_id("some-version"))
-                    .get_raw()
-                    .unwrap();
-
-                assert_eq!(String::from("xyz"), secret_value);
-            },
-        );
-
-        mock.assert();
     }
 
     #[test]
     fn test_manager_get_raw_secret_from_version_stage() {
-        let server = MockServer::start();
+        let config = MockServerConfig {
+            query: hashmap! {"secretId" => "some-secret", "versionStage" => "some-stage"},
+            status: 200,
+            response: "{\"SecretString\": \"xyz\"}",
+        };
 
-        let mock = server.mock(|when, then| {
-            when.method("GET")
-                .path("/secretsmanager/get")
-                .query_param("secretId", "some-secret")
-                .query_param("versionStage", "some-stage");
-            then.status(200).body("{\"SecretString\": \"xyz\"}");
+        with_mock_server(config, |port| {
+            temp_env::with_vars(
+                vec![
+                    (SESSION_TOKEN_NAME, Some("TOKEN")),
+                    (PORT_NAME, Some(&port.to_string())),
+                ],
+                || {
+                    let manager = Manager::new().unwrap();
+
+                    let secret_value = manager
+                        .get_secret(
+                            QueryBuilder::new("some-secret").with_version_stage("some-stage"),
+                        )
+                        .get_raw()
+                        .unwrap();
+
+                    assert_eq!(String::from("xyz"), secret_value);
+                },
+            );
         });
-
-        temp_env::with_vars(
-            vec![
-                (SESSION_TOKEN_NAME, Some("TOKEN")),
-                (PORT_NAME, Some(server.port().to_string().as_ref())),
-            ],
-            || {
-                let manager = Manager::new().unwrap();
-
-                let secret_value = manager
-                    .get_secret(QueryBuilder::new("some-secret").with_version_stage("some-stage"))
-                    .get_raw()
-                    .unwrap();
-
-                assert_eq!(String::from("xyz"), secret_value);
-            },
-        );
-
-        mock.assert();
     }
 
     #[test]
     fn test_manager_get_single_secret() {
-        let server = MockServer::start();
+        let config = MockServerConfig {
+            query: hashmap! {"secretId" => "some-secret"},
+            status: 200,
+            response: "{\"SecretString\": \"{\\\"name\\\": \\\"value\\\"}\"}",
+        };
 
-        let mock = server.mock(|when, then| {
-            when.method("GET")
-                .path("/secretsmanager/get")
-                .query_param("secretId", "some-secret");
-            then.status(200)
-                .body("{\"SecretString\": \"{\\\"name\\\": \\\"value\\\"}\"}");
+        with_mock_server(config, |port| {
+            temp_env::with_vars(
+                vec![
+                    (SESSION_TOKEN_NAME, Some("TOKEN")),
+                    (PORT_NAME, Some(&port.to_string())),
+                ],
+                || {
+                    let manager = Manager::new().unwrap();
+
+                    let secret_value = manager
+                        .get_secret("some-secret")
+                        .get_single("name")
+                        .unwrap();
+
+                    assert_eq!(String::from("value"), secret_value);
+                },
+            );
         });
-
-        temp_env::with_vars(
-            vec![
-                (SESSION_TOKEN_NAME, Some("TOKEN")),
-                (PORT_NAME, Some(server.port().to_string().as_ref())),
-            ],
-            || {
-                let manager = Manager::new().unwrap();
-
-                let secret_value = manager
-                    .get_secret("some-secret")
-                    .get_single("name")
-                    .unwrap();
-
-                assert_eq!(String::from("value"), secret_value);
-            },
-        );
-
-        mock.assert();
     }
 
     #[test]
     fn test_manager_get_typed_secret() {
         #[derive(Deserialize, Debug, PartialEq)]
         struct SecretType {
-            name: String
+            name: String,
         }
 
-        let server = MockServer::start();
+        let config = MockServerConfig {
+            query: hashmap! {"secretId" => "some-secret"},
+            status: 200,
+            response: "{\"SecretString\": \"{\\\"name\\\": \\\"value\\\"}\"}",
+        };
 
-        let mock = server.mock(|when, then| {
-            when.method("GET")
-                .path("/secretsmanager/get")
-                .query_param("secretId", "some-secret");
-            then.status(200)
-                .body("{\"SecretString\": \"{\\\"name\\\": \\\"value\\\"}\"}");
+        with_mock_server(config, |port| {
+            temp_env::with_vars(
+                vec![
+                    (SESSION_TOKEN_NAME, Some("TOKEN")),
+                    (PORT_NAME, Some(&port.to_string())),
+                ],
+                || {
+                    let manager = Manager::new().unwrap();
+
+                    let secret_value = manager.get_secret("some-secret").get_typed().unwrap();
+
+                    assert_eq!(
+                        SecretType {
+                            name: String::from("value")
+                        },
+                        secret_value
+                    );
+                },
+            );
         });
-
-        temp_env::with_vars(
-            vec![
-                (SESSION_TOKEN_NAME, Some("TOKEN")),
-                (PORT_NAME, Some(server.port().to_string().as_ref())),
-            ],
-            || {
-                let manager = Manager::new().unwrap();
-
-                let secret_value = manager
-                    .get_secret("some-secret")
-                    .get_typed()
-                    .unwrap();
-
-                assert_eq!(SecretType { name: String::from("value") }, secret_value);
-            },
-        );
-
-        mock.assert();
     }
 
     #[test]
@@ -364,33 +376,30 @@ mod tests {
 
     #[test]
     fn test_manager_invalid_json() {
-        let server = MockServer::start();
+        let config = MockServerConfig {
+            query: hashmap! {"secretId" => "some-secret"},
+            status: 200,
+            response: "{",
+        };
 
-        let mock = server.mock(|when, then| {
-            when.method("GET")
-                .path("/secretsmanager/get")
-                .query_param("secretId", "some-secret");
-            then.status(200).body("{");
+        with_mock_server(config, |port| {
+            temp_env::with_vars(
+                vec![
+                    (SESSION_TOKEN_NAME, Some("TOKEN")),
+                    (PORT_NAME, Some(&port.to_string())),
+                ],
+                || {
+                    let manager = Manager::new().unwrap();
+
+                    let err = manager.get_secret("some-secret").get_raw().unwrap_err();
+
+                    assert_eq!(
+                        "invalid JSON received from Secrets Manager extension",
+                        err.to_string()
+                    );
+                },
+            );
         });
-
-        temp_env::with_vars(
-            vec![
-                (SESSION_TOKEN_NAME, Some("TOKEN")),
-                (PORT_NAME, Some(server.port().to_string().as_ref())),
-            ],
-            || {
-                let manager = Manager::new().unwrap();
-
-                let err = manager.get_secret("some-secret").get_raw().unwrap_err();
-
-                assert_eq!(
-                    "invalid JSON received from Secrets Manager extension",
-                    err.to_string()
-                );
-            },
-        );
-
-        mock.assert();
     }
 
     #[test]
@@ -409,36 +418,33 @@ mod tests {
 
     #[test]
     fn test_manager_server_returns_non_200_status_code() {
-        let server = MockServer::start();
+        let config = MockServerConfig {
+            query: hashmap! {"secretId" => "some-secret"},
+            status: 500,
+            response: "",
+        };
 
-        let mock = server.mock(|when, then| {
-            when.method("GET")
-                .path("/secretsmanager/get")
-                .query_param("secretId", "some-secret");
-            then.status(500);
+        with_mock_server(config, |port| {
+            temp_env::with_vars(
+                vec![
+                    (SESSION_TOKEN_NAME, Some("TOKEN")),
+                    (PORT_NAME, Some(&port.to_string())),
+                ],
+                || {
+                    let manager = Manager::new().unwrap();
+
+                    let err = manager
+                        .get_secret(String::from("some-secret"))
+                        .get_raw()
+                        .unwrap_err();
+
+                    assert_eq!(
+                        "received an error response from the Secrets Manager extension",
+                        err.to_string()
+                    )
+                },
+            );
         });
-
-        temp_env::with_vars(
-            vec![
-                (SESSION_TOKEN_NAME, Some("TOKEN")),
-                (PORT_NAME, Some(server.port().to_string().as_ref())),
-            ],
-            || {
-                let manager = Manager::new().unwrap();
-
-                let err = manager
-                    .get_secret(String::from("some-secret"))
-                    .get_raw()
-                    .unwrap_err();
-
-                assert_eq!(
-                    "received an error response from the Secrets Manager extension",
-                    err.to_string()
-                )
-            },
-        );
-
-        mock.assert();
     }
 
     #[test]
@@ -479,67 +485,60 @@ mod tests {
 
     #[test]
     fn test_manager_get_single_secret_not_found() {
-        let server = MockServer::start();
+        let config = MockServerConfig {
+            query: hashmap! {"secretId" => "some-secret"},
+            status: 200,
+            response: "{\"SecretString\": \"{}\"}",
+        };
 
-        let mock = server.mock(|when, then| {
-            when.method("GET")
-                .path("/secretsmanager/get")
-                .query_param("secretId", "some-secret");
-            then.status(200).body("{\"SecretString\": \"{}\"}");
+        with_mock_server(config, |port| {
+            temp_env::with_vars(
+                vec![
+                    (SESSION_TOKEN_NAME, Some("TOKEN")),
+                    (PORT_NAME, Some(&port.to_string())),
+                ],
+                || {
+                    let manager = Manager::new().unwrap();
+
+                    let err = manager
+                        .get_secret("some-secret")
+                        .get_single("name")
+                        .unwrap_err();
+
+                    assert_eq!("'name' was not returned by the extension (are you querying for the right secret?)", err.to_string());
+                },
+            );
         });
-
-        temp_env::with_vars(
-            vec![
-                (SESSION_TOKEN_NAME, Some("TOKEN")),
-                (PORT_NAME, Some(server.port().to_string().as_ref())),
-            ],
-            || {
-                let manager = Manager::new().unwrap();
-
-                let err = manager
-                    .get_secret("some-secret")
-                    .get_single("name")
-                    .unwrap_err();
-
-                assert_eq!("'name' was not returned by the extension (are you querying for the right secret?)", err.to_string());
-            },
-        );
-
-        mock.assert();
     }
 
     #[test]
     fn test_manager_get_single_secret_incorrect_type() {
-        let server = MockServer::start();
+        let config = MockServerConfig {
+            query: hashmap! {"secretId" => "some-secret"},
+            status: 200,
+            response: "{\"SecretString\": \"{\\\"name\\\": 1}\"}",
+        };
 
-        let mock = server.mock(|when, then| {
-            when.method("GET")
-                .path("/secretsmanager/get")
-                .query_param("secretId", "some-secret");
-            then.status(200)
-                .body("{\"SecretString\": \"{\\\"name\\\": 1}\"}");
+        with_mock_server(config, |port| {
+            temp_env::with_vars(
+                vec![
+                    (SESSION_TOKEN_NAME, Some("TOKEN")),
+                    (PORT_NAME, Some(&port.to_string())),
+                ],
+                || {
+                    let manager = Manager::new().unwrap();
+
+                    let err = manager
+                        .get_secret("some-secret")
+                        .get_single("name")
+                        .unwrap_err();
+
+                    assert_eq!(
+                        "'name' was in the response from the extension, but it was not a string",
+                        err.to_string()
+                    );
+                },
+            );
         });
-
-        temp_env::with_vars(
-            vec![
-                (SESSION_TOKEN_NAME, Some("TOKEN")),
-                (PORT_NAME, Some(server.port().to_string().as_ref())),
-            ],
-            || {
-                let manager = Manager::new().unwrap();
-
-                let err = manager
-                    .get_secret("some-secret")
-                    .get_single("name")
-                    .unwrap_err();
-
-                assert_eq!(
-                    "'name' was in the response from the extension, but it was not a string",
-                    err.to_string()
-                );
-            },
-        );
-
-        mock.assert();
     }
 }
