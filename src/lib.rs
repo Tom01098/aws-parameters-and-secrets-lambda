@@ -90,6 +90,12 @@ impl Manager {
     }
 }
 
+impl Default for Manager {
+    fn default() -> Self {
+        ManagerBuilder::new().build().unwrap()
+    }
+}
+
 #[derive(Debug)]
 struct Connection {
     client: reqwest::Client,
