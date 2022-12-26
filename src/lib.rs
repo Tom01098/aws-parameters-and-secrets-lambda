@@ -18,6 +18,7 @@ assert_impl_all!(VersionIdQuery: Send, Sync, Debug, Clone);
 assert_impl_all!(VersionStageQuery: Send, Sync, Debug, Clone);
 
 #[derive(Debug)]
+#[must_use = "construct a `Manager` with the `build` method"]
 pub struct ManagerBuilder {
     port: Option<u16>,
     token: Option<String>,
@@ -165,6 +166,7 @@ pub trait Query {
     fn get_query_string(&self) -> String;
 }
 
+#[must_use = "continue building a query with the `with_version_id` or `with_version_stage` method"]
 pub struct QueryBuilder<'a> {
     secret_id: &'a str,
 }
