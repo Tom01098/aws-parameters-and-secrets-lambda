@@ -1,14 +1,17 @@
-name: test
+name: PR
 on:
   - pull_request
 jobs:
-  test:
-    name: Unit tests
+  compile:
+    name: Compile
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - uses: ATiltedTree/setup-rust@v1
+        with:
+          rust-version: stable
+          components: clippy
       - uses: actions/cache@v3
-        id: cache
         with:
           path: |
             ~/.cargo/bin/
@@ -16,19 +19,54 @@ jobs:
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
             target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
-      - name: Install stable Rust
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: curl https://sh.rustup.rs -sSf | sh -s -- -y
-      - name: Fetch dependencies
-        if: steps.cache.outputs.cache-hit != 'true'
-        run: cargo fetch
-      - name: Build
-        run: cargo build --tests
-      - name: Test
-        run: cargo test
+          key: dependencies-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: dependencies-
+      - run: cargo build --tests
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    needs:
+      - compile
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ATiltedTree/setup-rust@v1
+        with:
+          rust-version: stable
+          components: clippy
+      - uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: dependencies-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: dependencies-
+      - run: cargo clippy
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs:
+      - compile
+    steps:
+      - uses: actions/checkout@v3
+      - uses: ATiltedTree/setup-rust@v1
+        with:
+          rust-version: stable
+      - uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: dependencies-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: dependencies-
+      - run: cargo test
   deny:
-    name: Dependency linting
+    name: Lint dependencies
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
