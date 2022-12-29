@@ -26,7 +26,7 @@ jobs:
             target/
           key: dependencies-${{ hashFiles('**/Cargo.toml') }}
           restore-keys: dependencies-
-      - run: cargo build --tests --target=x86_64-unknown-linux-musl
+      - run: cargo build --tests
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -49,7 +49,7 @@ jobs:
             target/
           key: dependencies-${{ hashFiles('**/Cargo.toml') }}
           restore-keys: dependencies-
-      - run: cargo clippy --target=x86_64-unknown-linux-musl -Dwarnings
+      - run: cargo clippy -Dwarnings
   test:
     name: Test
     runs-on: ubuntu-latest
@@ -71,7 +71,7 @@ jobs:
             target/
           key: dependencies-${{ hashFiles('**/Cargo.toml') }}
           restore-keys: dependencies-
-      - run: cargo test --target=x86_64-unknown-linux-musl
+      - run: cargo test
   deny:
     name: Lint dependencies
     runs-on: ubuntu-latest
