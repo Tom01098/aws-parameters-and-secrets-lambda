@@ -6,6 +6,8 @@ on:
   push:
     branches:
       - main
+env:
+  RUSTFLAGS: -Dwarnings
 jobs:
   compile:
     name: Compile
@@ -50,7 +52,7 @@ jobs:
             target/
           key: dependencies-${{ hashFiles('**/Cargo.toml') }}
           restore-keys: dependencies-
-      - run: cargo clippy -Dwarnings
+      - run: cargo clippy
   test:
     name: Test
     runs-on: ubuntu-latest
