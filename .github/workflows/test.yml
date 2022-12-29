@@ -1,16 +1,24 @@
 name: PR
 on:
-  - pull_request
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+env:
+  RUSTFLAGS: -Dwarnings
 jobs:
   compile:
     name: Compile
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
+      - run: sudo apt-get install -y musl-tools
       - uses: ATiltedTree/setup-rust@v1
         with:
           rust-version: stable
-          components: clippy
+          targets: x86_64-unknown-linux-musl
       - uses: actions/cache@v3
         with:
           path: |
@@ -33,6 +41,7 @@ jobs:
         with:
           rust-version: stable
           components: clippy
+          targets: x86_64-unknown-linux-musl
       - uses: actions/cache/restore@v3
         with:
           path: |
@@ -51,9 +60,11 @@ jobs:
       - compile
     steps:
       - uses: actions/checkout@v3
+      - run: sudo apt-get install -y musl-tools
       - uses: ATiltedTree/setup-rust@v1
         with:
           rust-version: stable
+          targets: x86_64-unknown-linux-musl
       - uses: actions/cache/restore@v3
         with:
           path: |
