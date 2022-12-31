@@ -440,6 +440,7 @@ mod tests {
     async fn test_manager_no_extension() {
         let manager = ManagerBuilder::new()
             .with_token(String::from("TOKEN"))
+            .with_port(65535)
             .build()
             .unwrap();
 
