@@ -127,12 +127,18 @@ impl Default for ManagerBuilder {
     }
 }
 
+/// Manages connections to the cache. 
+/// 
+/// Ideally, only one of these should exist in a single executable (cloning is fine as it will reuse the connections).
 #[derive(Debug, Clone)]
 pub struct Manager {
     connection: Arc<Connection>,
 }
 
 impl Manager {
+    /// Get a representation of a secret that matches a given query.
+    /// 
+    /// Note that this does not return the value of the secret; see [`Secret`] for how to get it.
     pub fn get_secret(&self, query: impl Query) -> Secret {
         Secret {
             query: query.get_query_string(),
@@ -142,6 +148,11 @@ impl Manager {
 }
 
 impl Default for Manager {
+    /// Initialise a default `Manager` from the environment.
+    /// 
+    /// # Panics
+    /// If the AWS Lambda environment is invalid, this will panic.
+    /// It is strongly recommended to use a [`ManagerBuilder`] instead as it is more flexible and has proper error handling.
     fn default() -> Self {
         ManagerBuilder::new().build().unwrap()
     }
