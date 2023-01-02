@@ -1,27 +1,27 @@
 //! Cache AWS Secrets Manager secrets in your AWS Lambda function, reducing latency (we don't need to query another service) and cost ([Secrets Manager charges based on queries]).
-//! 
+//!
 //! # Quickstart
 //! Add the [AWS Parameters and Secrets Lambda Extension] [layer to your Lambda function]. Only version 2 of this layer is currently supported.
-//! 
-//! Assuming a secret exists with the name "backend-server" containing a key/value pair with a key of "api_key" and a value of 
+//!
+//! Assuming a secret exists with the name "backend-server" containing a key/value pair with a key of "api_key" and a value of
 //! "dd96eeda-16d3-4c86-975f-4986e603ec8c" (our super secret API key to our backend), this code will get the secret from the cache, querying
-//! Secrets Manager if it is not in the cache, and present it in a strongly-typed `BackendServer` object. 
-//! 
+//! Secrets Manager if it is not in the cache, and present it in a strongly-typed `BackendServer` object.
+//!
 //! ```rust
 //! use aws_parameters_and_secrets_lambda::Manager;
 //! use serde::Deserialize;
-//! 
+//!
 //! #[derive(Deserialize)]
 //! struct BackendServer {
 //!     api_key: String
 //! }
-//! 
+//!
 //! # let server = httpmock::MockServer::start();
 //! # let mock = server.mock(|when, then| {
 //! #     when.method("GET").path("/secretsmanager/get");
 //! #     then.status(200).body("{\"SecretString\": \"{\\\"api_key\\\": \\\"dd96eeda-16d3-4c86-975f-4986e603ec8c\\\"}\"}");
 //! # });
-//! # 
+//! #
 //! # temp_env::with_vars(
 //! #     vec![
 //! #         ("AWS_SESSION_TOKEN", Some("xyz")),
@@ -44,7 +44,7 @@
 //! #
 //! # mock.assert();
 //! ```
-//! 
+//!
 //! [Secrets Manager charges based on queries]: https://aws.amazon.com/secrets-manager/pricing/
 //! [AWS Parameters and Secrets Lambda Extension]: https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets_lambda.html
 //! [layer to your Lambda function]: https://docs.aws.amazon.com/lambda/latest/dg/invocation-layers.html
@@ -68,6 +68,17 @@ assert_impl_all!(Secret: Send, Sync, Debug, Clone);
 assert_impl_all!(VersionIdQuery: Send, Sync, Debug, Clone);
 assert_impl_all!(VersionStageQuery: Send, Sync, Debug, Clone);
 
+/// Flexible builder for a [`Manager`].
+///
+/// This sample should be all you ever need to use. It is identical to [`Manager::default`](struct.Manager.html#method.default) but does not panic on failure.
+///
+/// ```rust
+/// # use aws_parameters_and_secrets_lambda::ManagerBuilder;
+/// # temp_env::with_var("AWS_SESSION_TOKEN", Some("xyz"), || {
+/// let manager = ManagerBuilder::new().build()?;
+/// # Ok::<_, anyhow::Error>(())
+/// # });
+/// ```
 #[derive(Debug)]
 #[must_use = "construct a `Manager` with the `build` method"]
 pub struct ManagerBuilder {
@@ -76,6 +87,8 @@ pub struct ManagerBuilder {
 }
 
 impl ManagerBuilder {
+    /// Create a new builder with the default values.
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             port: None,
@@ -83,16 +96,25 @@ impl ManagerBuilder {
         }
     }
 
+    /// Use the given port for the extension server instead of the default.
+    ///
+    /// If this is not called before [`build`](Self::build), then the "PARAMETERS_SECRETS_EXTENSION_HTTP_PORT"
+    /// environment variable will be used, or 2773 if this is not set.
     pub fn with_port(mut self, port: u16) -> Self {
         self.port = Some(port);
         self
     }
 
+    /// Use the given token to authenticate with the extension server instead of the default.
+    ///
+    /// If this is not called before [`build`](Self::build), then the "AWS_SESSION_TOKEN"
+    /// environment variable will be used.
     pub fn with_token(mut self, token: String) -> Self {
         self.token = Some(token);
         self
     }
 
+    /// Create a [`Manager`] from the given values.
     pub fn build(self) -> Result<Manager> {
         let port = match self.port {
             Some(port) => port,
@@ -121,14 +143,8 @@ impl ManagerBuilder {
     }
 }
 
-impl Default for ManagerBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Manages connections to the cache. 
-/// 
+/// Manages connections to the cache. Create one via a [`ManagerBuilder`].
+///
 /// Ideally, only one of these should exist in a single executable (cloning is fine as it will reuse the connections).
 #[derive(Debug, Clone)]
 pub struct Manager {
@@ -137,7 +153,7 @@ pub struct Manager {
 
 impl Manager {
     /// Get a representation of a secret that matches a given query.
-    /// 
+    ///
     /// Note that this does not return the value of the secret; see [`Secret`] for how to get it.
     pub fn get_secret(&self, query: impl Query) -> Secret {
         Secret {
@@ -149,7 +165,7 @@ impl Manager {
 
 impl Default for Manager {
     /// Initialise a default `Manager` from the environment.
-    /// 
+    ///
     /// # Panics
     /// If the AWS Lambda environment is invalid, this will panic.
     /// It is strongly recommended to use a [`ManagerBuilder`] instead as it is more flexible and has proper error handling.
