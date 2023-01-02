@@ -103,8 +103,8 @@ jobs:
     name: Lint dependencies
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
-    - uses: EmbarkStudios/cargo-deny-action@v1
-      with:
-        log-level: warn
-        command: check
+      - uses: actions/checkout@v3
+      - uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          log-level: warn
+          command: check
