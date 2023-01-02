@@ -76,6 +76,29 @@ jobs:
           key: dependencies-${{ hashFiles('**/Cargo.toml') }}
           restore-keys: dependencies-
       - run: cargo test
+  doctest:
+    name: Documentation tests
+    runs-on: ubuntu-latest
+    needs:
+      - compile
+    steps:
+      - uses: actions/checkout@v3
+      - run: sudo apt-get install -y musl-tools
+      - uses: ATiltedTree/setup-rust@v1
+        with:
+          rust-version: nightly # https://github.com/rust-lang/cargo/issues/7040
+          targets: x86_64-unknown-linux-musl
+      - uses: actions/cache/restore@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: dependencies-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: dependencies-
+      - run: cargo +nightly test -Zdoctest-xcompile
   deny:
     name: Lint dependencies
     runs-on: ubuntu-latest
