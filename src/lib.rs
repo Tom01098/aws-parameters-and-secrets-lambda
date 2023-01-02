@@ -1,3 +1,56 @@
+//! Cache AWS Secrets Manager secrets in your AWS Lambda function, reducing latency (we don't need to query another service) and cost ([Secrets Manager charges based on queries]).
+//!
+//! # Quickstart
+//! Add the [AWS Parameters and Secrets Lambda Extension] [layer to your Lambda function]. Only version 2 of this layer is currently supported.
+//!
+//! Assuming a secret exists with the name "backend-server" containing a key/value pair with a key of "api_key" and a value of
+//! "dd96eeda-16d3-4c86-975f-4986e603ec8c" (our super secret API key to our backend), this code will get the secret from the cache, querying
+//! Secrets Manager if it is not in the cache, and present it in a strongly-typed `BackendServer` object.
+//!
+//! ```rust
+//! use aws_parameters_and_secrets_lambda::Manager;
+//! use serde::Deserialize;
+//!
+//! #[derive(Deserialize)]
+//! struct BackendServer {
+//!     api_key: String
+//! }
+//!
+//! # let server = httpmock::MockServer::start();
+//! # let mock = server.mock(|when, then| {
+//! #     when.method("GET").path("/secretsmanager/get");
+//! #     then.status(200).body("{\"SecretString\": \"{\\\"api_key\\\": \\\"dd96eeda-16d3-4c86-975f-4986e603ec8c\\\"}\"}");
+//! # });
+//! #
+//! # temp_env::with_vars(
+//! #     vec![
+//! #         ("AWS_SESSION_TOKEN", Some("xyz")),
+//! #         ("PARAMETERS_SECRETS_EXTENSION_HTTP_PORT", Some(&server.port().to_string()))
+//! #     ],
+//! #     || {
+//! #         tokio_test::block_on(
+//! #             std::panic::AssertUnwindSafe(
+//! #                 async {
+//! let manager = Manager::default();
+//! let secret = manager.get_secret("backend-server");
+//! let secret_value: BackendServer = secret.get_typed().await?;
+//! assert_eq!("dd96eeda-16d3-4c86-975f-4986e603ec8c", secret_value.api_key);
+//! #                     Ok::<_, anyhow::Error>(())
+//! #                 }
+//! #             )
+//! #         );
+//! #     }
+//! # );
+//! #
+//! # mock.assert();
+//! ```
+//!
+//! [Secrets Manager charges based on queries]: https://aws.amazon.com/secrets-manager/pricing/
+//! [AWS Parameters and Secrets Lambda Extension]: https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets_lambda.html
+//! [layer to your Lambda function]: https://docs.aws.amazon.com/lambda/latest/dg/invocation-layers.html
+
+#![deny(missing_docs)]
+
 use std::fmt::Debug;
 use std::{env, sync::Arc};
 
@@ -17,6 +70,17 @@ assert_impl_all!(Secret: Send, Sync, Debug, Clone);
 assert_impl_all!(VersionIdQuery: Send, Sync, Debug, Clone);
 assert_impl_all!(VersionStageQuery: Send, Sync, Debug, Clone);
 
+/// Flexible builder for a [`Manager`].
+///
+/// This sample should be all you ever need to use. It is identical to [`Manager::default`](struct.Manager.html#method.default) but does not panic on failure.
+///
+/// ```rust
+/// # use aws_parameters_and_secrets_lambda::ManagerBuilder;
+/// # temp_env::with_var("AWS_SESSION_TOKEN", Some("xyz"), || {
+/// let manager = ManagerBuilder::new().build()?;
+/// # Ok::<_, anyhow::Error>(())
+/// # });
+/// ```
 #[derive(Debug)]
 #[must_use = "construct a `Manager` with the `build` method"]
 pub struct ManagerBuilder {
@@ -25,6 +89,8 @@ pub struct ManagerBuilder {
 }
 
 impl ManagerBuilder {
+    /// Create a new builder with the default values.
+    #[allow(clippy::new_without_default)]
     pub fn new() -> Self {
         Self {
             port: None,
@@ -32,16 +98,25 @@ impl ManagerBuilder {
         }
     }
 
+    /// Use the given port for the extension server instead of the default.
+    ///
+    /// If this is not called before [`build`](Self::build), then the "PARAMETERS_SECRETS_EXTENSION_HTTP_PORT"
+    /// environment variable will be used, or 2773 if this is not set.
     pub fn with_port(mut self, port: u16) -> Self {
         self.port = Some(port);
         self
     }
 
+    /// Use the given token to authenticate with the extension server instead of the default.
+    ///
+    /// If this is not called before [`build`](Self::build), then the "AWS_SESSION_TOKEN"
+    /// environment variable will be used.
     pub fn with_token(mut self, token: String) -> Self {
         self.token = Some(token);
         self
     }
 
+    /// Create a [`Manager`] from the given values.
     pub fn build(self) -> Result<Manager> {
         let port = match self.port {
             Some(port) => port,
@@ -70,18 +145,18 @@ impl ManagerBuilder {
     }
 }
 
-impl Default for ManagerBuilder {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
+/// Manages connections to the cache. Create one via a [`ManagerBuilder`].
+///
+/// Ideally, only one of these should exist in a single executable (cloning is fine as it will reuse the connections).
 #[derive(Debug, Clone)]
 pub struct Manager {
     connection: Arc<Connection>,
 }
 
 impl Manager {
+    /// Get a representation of a secret that matches a given query.
+    ///
+    /// Note that this does not return the value of the secret; see [`Secret`] for how to get it.
     pub fn get_secret(&self, query: impl Query) -> Secret {
         Secret {
             query: query.get_query_string(),
@@ -91,6 +166,11 @@ impl Manager {
 }
 
 impl Default for Manager {
+    /// Initialise a default `Manager` from the environment.
+    ///
+    /// # Panics
+    /// If the AWS Lambda environment is invalid, this will panic.
+    /// It is strongly recommended to use a [`ManagerBuilder`] instead as it is more flexible and has proper error handling.
     fn default() -> Self {
         ManagerBuilder::new().build().unwrap()
     }
@@ -122,6 +202,7 @@ impl Connection {
     }
 }
 
+/// A representation of a secret in Secrets Manager.
 #[derive(Debug, Clone)]
 pub struct Secret {
     query: String,
@@ -129,10 +210,14 @@ pub struct Secret {
 }
 
 impl Secret {
+    /// Get the plaintext value of this secret.
+    /// 
+    /// Usually, this is in json format, but it can be any data format that you provide to Secrets Manager.
     pub async fn get_raw(&self) -> Result<String> {
         self.connection.get_secret(&self.query).await
     }
 
+    /// Get a value by name from within this secret.
     pub async fn get_single(&self, name: impl AsRef<str>) -> Result<String> {
         let raw = &self.get_raw().await?;
         let name = name.as_ref();
@@ -147,6 +232,7 @@ impl Secret {
         Ok(String::from(secret))
     }
 
+    /// Get the value of this secret, represented as a strongly-typed T.
     pub async fn get_typed<T: DeserializeOwned>(&self) -> Result<T> {
         let raw = self.get_raw().await?;
         Ok(serde_json::from_str(&raw)?)
@@ -167,21 +253,29 @@ struct ExtensionResponse {
     secret_string: String,
 }
 
+/// A query for a specific [`Secret`] in AWS Secrets Manager. See [`Manager::get_secret`] for usage.
+/// 
+/// # Sealed
+/// You cannot implement this trait yourself.
 #[sealed]
 pub trait Query {
+    #[doc(hidden)]
     fn get_query_string(&self) -> String;
 }
 
+/// Flexible builder for a complex [`Query`].
 #[must_use = "continue building a query with the `with_version_id` or `with_version_stage` method"]
 pub struct QueryBuilder<'a> {
     secret_id: &'a str,
 }
 
 impl<'a> QueryBuilder<'a> {
+    /// Create a new builder with the secret name or ARN.
     pub fn new(secret_id: &'a str) -> Self {
         Self { secret_id }
     }
 
+    /// Create a query with a version id.
     pub fn with_version_id(self, version_id: &'a str) -> VersionIdQuery<'a> {
         VersionIdQuery {
             secret_id: self.secret_id,
@@ -189,6 +283,7 @@ impl<'a> QueryBuilder<'a> {
         }
     }
 
+    /// Create a query with a version stage.
     pub fn with_version_stage(self, version_stage: &'a str) -> VersionStageQuery<'a> {
         VersionStageQuery {
             secret_id: self.secret_id,
@@ -197,6 +292,20 @@ impl<'a> QueryBuilder<'a> {
     }
 }
 
+/// Query by the secret name or ARN.
+/// 
+/// This returns the current value of the secret (stage = "AWSCURRENT") and is usually what you want to use.
+/// 
+/// Any string-like type can be used, including [`String`], [`&str`], and [`std::borrow::Cow<str>`].
+/// 
+/// ```rust
+/// # use aws_parameters_and_secrets_lambda::ManagerBuilder;
+/// # temp_env::with_var("AWS_SESSION_TOKEN", Some("xyz"), || {
+/// # let manager = ManagerBuilder::new().build()?;
+/// let secret = manager.get_secret("secret-name");
+/// # Ok::<_, anyhow::Error>(())
+/// # });
+/// ```
 #[sealed]
 impl<T: AsRef<str>> Query for T {
     fn get_query_string(&self) -> String {
@@ -204,12 +313,28 @@ impl<T: AsRef<str>> Query for T {
     }
 }
 
+/// A query for a secret with a version id. Create one via [`QueryBuilder::with_version_id`].
+/// 
+/// The version id is a unique identifier returned by Secrets Manager when a secret is created or updated.
 #[derive(Debug, Clone)]
 pub struct VersionIdQuery<'a> {
     secret_id: &'a str,
     version_id: &'a str,
 }
 
+/// Query by the version id of the secret as well as the secret name or ARN.
+/// 
+/// ```rust
+/// # use aws_parameters_and_secrets_lambda::ManagerBuilder;
+/// # temp_env::with_var("AWS_SESSION_TOKEN", Some("xyz"), || {
+/// # let manager = ManagerBuilder::new().build()?;
+/// use aws_parameters_and_secrets_lambda::QueryBuilder;
+/// 
+/// let query = QueryBuilder::new("secret-name")
+///     .with_version_id("18b94218-543d-4d67-aec5-f8e6a41f7813");
+/// let secret = manager.get_secret(query);
+/// # Ok::<_, anyhow::Error>(())
+/// # });
 #[sealed]
 impl Query for VersionIdQuery<'_> {
     fn get_query_string(&self) -> String {
@@ -217,12 +342,29 @@ impl Query for VersionIdQuery<'_> {
     }
 }
 
+/// A query for a secret with a version stage. Create one via [`QueryBuilder::with_version_stage`].
+/// 
+/// The "AWSCURRENT" stage is the current value of the secret, while the "AWSPREVIOUS" stage is the last value of the "AWSCURRENT" stage.
+/// You can also use your own stages.
 #[derive(Debug, Clone)]
 pub struct VersionStageQuery<'a> {
     secret_id: &'a str,
     version_stage: &'a str,
 }
 
+/// Query by the stage of the secret as well as the secret name or ARN.
+/// 
+/// ```rust
+/// # use aws_parameters_and_secrets_lambda::ManagerBuilder;
+/// # temp_env::with_var("AWS_SESSION_TOKEN", Some("xyz"), || {
+/// # let manager = ManagerBuilder::new().build()?;
+/// use aws_parameters_and_secrets_lambda::QueryBuilder;
+/// 
+/// let query = QueryBuilder::new("secret-name")
+///     .with_version_stage("AWSPREVIOUS");
+/// let secret = manager.get_secret(query);
+/// # Ok::<_, anyhow::Error>(())
+/// # });
 #[sealed]
 impl Query for VersionStageQuery<'_> {
     fn get_query_string(&self) -> String {

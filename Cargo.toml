@@ -18,3 +18,4 @@ httpmock = "0.6"
 maplit = "1"
 temp-env = "0.3"
 tokio = { version = "1.23.0", features = ["macros"] }
+tokio-test = "0.4"
