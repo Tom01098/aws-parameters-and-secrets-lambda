@@ -49,6 +49,8 @@
 //! [AWS Parameters and Secrets Lambda Extension]: https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets_lambda.html
 //! [layer to your Lambda function]: https://docs.aws.amazon.com/lambda/latest/dg/invocation-layers.html
 
+#![deny(missing_docs)]
+
 use std::fmt::Debug;
 use std::{env, sync::Arc};
 
