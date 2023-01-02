@@ -245,21 +245,29 @@ struct ExtensionResponse {
     secret_string: String,
 }
 
+/// A query for a specific [`Secret`] in AWS Secrets Manager. See [`Manager::get_secret`] for usage.
+/// 
+/// # Sealed
+/// You cannot implement this trait yourself.
 #[sealed]
 pub trait Query {
+    #[doc(hidden)]
     fn get_query_string(&self) -> String;
 }
 
+/// Flexible builder for a complex [`Query`].
 #[must_use = "continue building a query with the `with_version_id` or `with_version_stage` method"]
 pub struct QueryBuilder<'a> {
     secret_id: &'a str,
 }
 
 impl<'a> QueryBuilder<'a> {
+    /// Create a new builder with the secret name or ARN.
     pub fn new(secret_id: &'a str) -> Self {
         Self { secret_id }
     }
 
+    /// Create a query with a version id.
     pub fn with_version_id(self, version_id: &'a str) -> VersionIdQuery<'a> {
         VersionIdQuery {
             secret_id: self.secret_id,
@@ -267,6 +275,7 @@ impl<'a> QueryBuilder<'a> {
         }
     }
 
+    /// Create a query with a version stage.
     pub fn with_version_stage(self, version_stage: &'a str) -> VersionStageQuery<'a> {
         VersionStageQuery {
             secret_id: self.secret_id,
@@ -275,6 +284,20 @@ impl<'a> QueryBuilder<'a> {
     }
 }
 
+/// Query by the secret name or ARN.
+/// 
+/// This returns the current value of the secret (stage = "AWSCURRENT") and is usually what you want to use.
+/// 
+/// Any string-like type can be used, including [`String`], [`&str`], and [`std::borrow::Cow<str>`].
+/// 
+/// ```rust
+/// # use aws_parameters_and_secrets_lambda::ManagerBuilder;
+/// # temp_env::with_var("AWS_SESSION_TOKEN", Some("xyz"), || {
+/// # let manager = ManagerBuilder::new().build()?;
+/// let secret = manager.get_secret("secret-name");
+/// # Ok::<_, anyhow::Error>(())
+/// # });
+/// ```
 #[sealed]
 impl<T: AsRef<str>> Query for T {
     fn get_query_string(&self) -> String {
@@ -282,12 +305,28 @@ impl<T: AsRef<str>> Query for T {
     }
 }
 
+/// A query for a secret with a version id. Create one via [`QueryBuilder::with_version_id`].
+/// 
+/// The version id is a unique identifier returned by Secrets Manager when a secret is created or updated.
 #[derive(Debug, Clone)]
 pub struct VersionIdQuery<'a> {
     secret_id: &'a str,
     version_id: &'a str,
 }
 
+/// Query by the version id of the secret as well as the secret name or ARN.
+/// 
+/// ```rust
+/// # use aws_parameters_and_secrets_lambda::ManagerBuilder;
+/// # temp_env::with_var("AWS_SESSION_TOKEN", Some("xyz"), || {
+/// # let manager = ManagerBuilder::new().build()?;
+/// use aws_parameters_and_secrets_lambda::QueryBuilder;
+/// 
+/// let query = QueryBuilder::new("secret-name")
+///     .with_version_id("18b94218-543d-4d67-aec5-f8e6a41f7813");
+/// let secret = manager.get_secret(query);
+/// # Ok::<_, anyhow::Error>(())
+/// # });
 #[sealed]
 impl Query for VersionIdQuery<'_> {
     fn get_query_string(&self) -> String {
@@ -295,12 +334,29 @@ impl Query for VersionIdQuery<'_> {
     }
 }
 
+/// A query for a secret with a version stage. Create one via [`QueryBuilder::with_version_stage`].
+/// 
+/// The "AWSCURRENT" stage is the current value of the secret, while the "AWSPREVIOUS" stage is the last value of the "AWSCURRENT" stage.
+/// You can also use your own stages.
 #[derive(Debug, Clone)]
 pub struct VersionStageQuery<'a> {
     secret_id: &'a str,
     version_stage: &'a str,
 }
 
+/// Query by the stage of the secret as well as the secret name or ARN.
+/// 
+/// ```rust
+/// # use aws_parameters_and_secrets_lambda::ManagerBuilder;
+/// # temp_env::with_var("AWS_SESSION_TOKEN", Some("xyz"), || {
+/// # let manager = ManagerBuilder::new().build()?;
+/// use aws_parameters_and_secrets_lambda::QueryBuilder;
+/// 
+/// let query = QueryBuilder::new("secret-name")
+///     .with_version_stage("AWSPREVIOUS");
+/// let secret = manager.get_secret(query);
+/// # Ok::<_, anyhow::Error>(())
+/// # });
 #[sealed]
 impl Query for VersionStageQuery<'_> {
     fn get_query_string(&self) -> String {
