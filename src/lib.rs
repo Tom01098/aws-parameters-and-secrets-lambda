@@ -200,6 +200,7 @@ impl Connection {
     }
 }
 
+/// A representation of a secret in Secrets Manager.
 #[derive(Debug, Clone)]
 pub struct Secret {
     query: String,
@@ -207,10 +208,14 @@ pub struct Secret {
 }
 
 impl Secret {
+    /// Get the plaintext value of this secret.
+    /// 
+    /// Usually, this is in json format, but it can be any data format that you provide to Secrets Manager.
     pub async fn get_raw(&self) -> Result<String> {
         self.connection.get_secret(&self.query).await
     }
 
+    /// Get a value by name from within this secret.
     pub async fn get_single(&self, name: impl AsRef<str>) -> Result<String> {
         let raw = &self.get_raw().await?;
         let name = name.as_ref();
@@ -225,6 +230,7 @@ impl Secret {
         Ok(String::from(secret))
     }
 
+    /// Get the value of this secret, represented as a strongly-typed T.
     pub async fn get_typed<T: DeserializeOwned>(&self) -> Result<T> {
         let raw = self.get_raw().await?;
         Ok(serde_json::from_str(&raw)?)
