@@ -1,6 +1,12 @@
 [package]
 name = "aws-parameters-and-secrets-lambda"
+description = "Cache AWS Secrets Manager secrets in your AWS Lambda function"
 version = "0.1.0"
+
+homepage = "https://docs.rs/aws-parameters-and-secrets-lambda/"
+repository = "https://github.com/Tom01098/aws-parameters-and-secrets-lambda"
+readme = true
+
 edition = "2021"
 license = "Apache-2.0 OR MIT"
 
