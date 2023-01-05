@@ -10,6 +10,9 @@ readme = true
 edition = "2021"
 license = "Apache-2.0 OR MIT"
 
+categories = ["asynchronous", "caching"]
+keywords = ["aws", "secrets", "lambda"]
+
 [dependencies]
 anyhow = "1"
 openssl = { version = "0.10", features = ["vendored"] }
