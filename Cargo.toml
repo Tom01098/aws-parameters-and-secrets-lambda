@@ -1,8 +1,18 @@
 [package]
 name = "aws-parameters-and-secrets-lambda"
+description = "Cache AWS Secrets Manager secrets in your AWS Lambda function"
 version = "0.1.0"
+authors = ["Tom Humphreys <Tom01098Code@gmail.com>"]
+
+homepage = "https://docs.rs/aws-parameters-and-secrets-lambda/"
+repository = "https://github.com/Tom01098/aws-parameters-and-secrets-lambda"
+readme = true
+
 edition = "2021"
 license = "Apache-2.0 OR MIT"
+
+categories = ["asynchronous", "caching"]
+keywords = ["aws", "secrets", "lambda"]
 
 [dependencies]
 anyhow = "1"
@@ -19,3 +29,7 @@ maplit = "1"
 temp-env = "0.3"
 tokio = { version = "1.23.0", features = ["macros"] }
 tokio-test = "0.4"
+
+[package.metadata.docs.rs]
+default-target = "x86_64-unknown-linux-musl"
+targets = []
