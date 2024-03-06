@@ -163,6 +163,22 @@ impl Manager {
             connection: self.connection.clone(),
         }
     }
+    /// Get a representation of a parameter that matches a given parameter name.
+    ///
+    /// For parameters of type `SecureString`, `with_decryption` must be set to `true.
+    /// Additionally, the lambda role must have the `kms:Decrypt` permission.
+    ///
+    /// Note that this does not return the value of the parameter; see [`Parameter`] for how to get it.
+    pub fn get_parameter(&self, param_name: &str, with_decryption: bool) -> Parameter {
+        Parameter {
+            query: format!(
+                "name={}&withDecryption={}",
+                param_name,
+                with_decryption
+            ),
+            connection: self.connection.clone(),
+        }
+    }
 }
 
 impl Default for Manager {
@@ -184,9 +200,9 @@ struct Connection {
 }
 
 impl Connection {
-    async fn get_secret(&self, query: &str) -> Result<String> {
-        Ok(self.client
-            .get(format!("http://localhost:{port}/secretsmanager/get?{query}", port = self.port))
+    async fn get_from_request(&self, url: &str) -> Result<reqwest::Response> {
+        self.client
+            .get(url)
             .header(TOKEN_HEADER_NAME, &self.token)
             .send()
             .await
@@ -194,11 +210,24 @@ impl Connection {
                 "could not communicate with the Secrets Manager extension (are you not running in AWS Lambda with the 'AWS-Parameters-and-Secrets-Lambda-Extension' version 2 layer?)"
             )?
             .error_for_status()
-            .context("received an error response from the Secrets Manager extension")?
-            .json::<ExtensionResponse>()
+            .context("received an error response from the Secrets Manager extension")
+    }
+
+    async fn get_secret(&self, query: &str) -> Result<String> {
+        let url = format!("http://localhost:{port}/secretsmanager/get?{query}", port = self.port);
+        Ok(self.get_from_request(&url).await?
+            .json::<ExtensionResponseSecret>()
             .await
             .context("invalid JSON received from Secrets Manager extension")?
             .secret_string)
+    }
+
+    async fn get_parameter(&self, query: &str) -> Result<ExtensionResponseParam> {
+        let url = format!("http://localhost:{port}/systemsmanager/parameters/get?{query}", port = self.port);
+        self.get_from_request(&url).await?
+            .json::<ExtensionResponseParam>()
+            .await
+            .context("invalid JSON received from Secrets Manager extension")
     }
 }
 
@@ -248,9 +277,81 @@ impl PartialEq for Secret {
 impl Eq for Secret {}
 
 #[derive(Deserialize)]
-struct ExtensionResponse {
+struct ExtensionResponseSecret {
     #[serde(rename = "SecretString")]
     secret_string: String,
+}
+
+/// A representation of a parameter in Parameter Store in SSM.
+#[derive(Debug, Clone)]
+pub struct Parameter {
+    query: String,
+    connection: Arc<Connection>,
+}
+
+impl Parameter {
+    /// Get the plaintext value of this parameter.
+    pub async fn get_raw(&self) -> Result<String> {
+        Ok(self.get_as_full_extension_response().await?.parameter.value)
+    }
+
+    /// Get the value of this parameter, represented as a strongly-typed T.
+    pub async fn get_typed<T: DeserializeOwned>(&self) -> Result<T> {
+        let raw = self.get_raw().await?;
+        Ok(serde_json::from_str(&raw)?)
+    }
+    
+    /// Get the full response from the AWS lambda extension, including parameter type / version / ARN
+    /// info.
+    ///
+    /// Rarely used, see [`Self::get_raw()`] and [`Self::get_typed()`] for ways to retrieve string
+    /// and JSON parameters, respectively.
+    pub async fn get_as_full_extension_response(&self) -> Result<ExtensionResponseParam> {
+        self.connection.get_parameter(&self.query).await
+    }
+}
+
+impl PartialEq for Parameter {
+    fn eq(&self, other: &Self) -> bool {
+        self.query == other.query
+    }
+}
+
+impl Eq for Parameter {}
+
+/// The response from the AWS Lambda extension when successfully queried for a paramater at
+/// endpoint `/systemsmanager/parameters/get/?name=...`.
+#[derive(Deserialize)]
+pub struct ExtensionResponseParam {
+    /// The parameter returned.
+    #[serde(rename = "Parameter")]
+    pub parameter: ExtensionResponseParameterField
+}
+
+/// A parameter returned by the AWS Lambda extension, as structured JSON
+#[derive(Deserialize)]
+pub struct ExtensionResponseParameterField {
+    /// The parameter's ARN (Amazon Resource Name) full path.
+    #[serde(rename = "ARN")]
+    pub arn: String,
+    /// The data type of the parameter (e.g. text)
+    #[serde(rename = "DataType")]
+    pub data_type: String,
+    /// The date the parameter was last modified
+    #[serde(rename = "LastModifiedDate")]
+    pub last_modified_date: String,
+    /// The parameter's name.
+    #[serde(rename = "Name")]
+    pub name: String,
+    /// The date the parameter's type (e.g. `String`, `StringList`, or `SecureString`).
+    #[serde(rename = "Type")]
+    pub r#type: String,
+    /// The value of the parameter (this is the field that gets returned by [`Parameter::get_raw()`]).
+    #[serde(rename = "Value")]
+    pub value: String,
+    /// The date the parameter's version.
+    #[serde(rename = "Version")]
+    pub version: u64
 }
 
 /// A query for a specific [`Secret`] in AWS Secrets Manager. See [`Manager::get_secret`] for usage.
