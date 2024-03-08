@@ -486,7 +486,11 @@ mod tests {
 
     use super::*;
 
+    const SECRETS_ENDPOINT: &'static str = "/secretsmanager/get";
+    const PARAMETERS_ENDPOINT: &'static str  = "/systemsmanager/parameters/get";
+
     struct MockServerConfig<'a> {
+        endpoint: &'a str,
         query: HashMap<&'a str, &'a str>,
         status: u16,
         response: &'a str,
@@ -496,7 +500,7 @@ mod tests {
         let server = MockServer::start();
 
         let mock = server.mock(|when, then| {
-            let mut when = when.method("GET").path("/secretsmanager/get");
+            let mut when = when.method("GET").path(config.endpoint);
 
             for (name, value) in config.query {
                 when = when.query_param(name, value);
@@ -512,6 +516,7 @@ mod tests {
     #[tokio::test]
     async fn test_manager_get_raw_secret() {
         let config = MockServerConfig {
+            endpoint: SECRETS_ENDPOINT,
             query: hashmap! {"secretId" => "some-secret"},
             status: 200,
             response: "{\"SecretString\": \"xyz\"}",
@@ -534,6 +539,7 @@ mod tests {
     #[tokio::test]
     async fn test_manager_get_raw_secret_from_version_id() {
         let config = MockServerConfig {
+            endpoint: SECRETS_ENDPOINT,
             query: hashmap! {"secretId" => "some-secret", "versionId" => "some-version"},
             status: 200,
             response: "{\"SecretString\": \"xyz\"}",
@@ -560,6 +566,7 @@ mod tests {
     #[tokio::test]
     async fn test_manager_get_raw_secret_from_version_stage() {
         let config = MockServerConfig {
+            endpoint: SECRETS_ENDPOINT,
             query: hashmap! {"secretId" => "some-secret", "versionStage" => "some-stage"},
             status: 200,
             response: "{\"SecretString\": \"xyz\"}",
@@ -586,6 +593,7 @@ mod tests {
     #[tokio::test]
     async fn test_manager_get_single_secret() {
         let config = MockServerConfig {
+            endpoint: SECRETS_ENDPOINT,
             query: hashmap! {"secretId" => "some-secret"},
             status: 200,
             response: "{\"SecretString\": \"{\\\"name\\\": \\\"value\\\"}\"}",
@@ -617,6 +625,7 @@ mod tests {
         }
 
         let config = MockServerConfig {
+            endpoint: SECRETS_ENDPOINT,
             query: hashmap! {"secretId" => "some-secret"},
             status: 200,
             response: "{\"SecretString\": \"{\\\"name\\\": \\\"value\\\"}\"}",
@@ -653,6 +662,7 @@ mod tests {
     #[tokio::test]
     async fn test_manager_invalid_json() {
         let config = MockServerConfig {
+            endpoint: SECRETS_ENDPOINT,
             query: hashmap! {"secretId" => "some-secret"},
             status: 200,
             response: "{",
@@ -702,6 +712,7 @@ mod tests {
     #[tokio::test]
     async fn test_manager_server_returns_non_200_status_code() {
         let config = MockServerConfig {
+            endpoint: SECRETS_ENDPOINT,
             query: hashmap! {"secretId" => "some-secret"},
             status: 500,
             response: "",
@@ -764,6 +775,7 @@ mod tests {
     #[tokio::test]
     async fn test_manager_get_single_secret_not_found() {
         let config = MockServerConfig {
+            endpoint: SECRETS_ENDPOINT,
             query: hashmap! {"secretId" => "some-secret"},
             status: 200,
             response: "{\"SecretString\": \"{}\"}",
@@ -793,6 +805,7 @@ mod tests {
     #[tokio::test]
     async fn test_manager_get_single_secret_incorrect_type() {
         let config = MockServerConfig {
+            endpoint: SECRETS_ENDPOINT,
             query: hashmap! {"secretId" => "some-secret"},
             status: 200,
             response: "{\"SecretString\": \"{\\\"name\\\": 1}\"}",
@@ -815,6 +828,78 @@ mod tests {
                 "'name' was in the response from the extension, but it was not a string",
                 err.to_string()
             );
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_manager_get_ssm_raw_parameter() {
+        let config = MockServerConfig {
+            endpoint: PARAMETERS_ENDPOINT,
+            query: hashmap! {"name" => "/some/path/to/a/param", "withDecryption" => "false"},
+            status: 200,
+            response: "{
+                \"Parameter\": {
+                    \"ARN\": \"arn:aws:ssm:us-east-1:000000000000:parameter/some/path/to/a/param\",
+                    \"DataType\": \"text\",
+                    \"LastModifiedDate\": \"2024-03-01T17:53:36.314Z\",
+                    \"Name\": \"/some/path/to/a/param\",
+                    \"Selector\": null,
+                    \"SourceResult\": null,
+                    \"Type\": \"String\",
+                    \"Value\": \"Some param\",
+                    \"Version\": 1
+                },
+                \"ResultMetadata\": {}
+            }",
+        };
+
+        with_mock_server(config, |port| async move {
+            let manager = ManagerBuilder::new()
+                .with_port(port)
+                .with_token(String::from("TOKEN"))
+                .build()
+                .unwrap();
+
+            let param_value = manager.get_parameter("/some/path/to/a/param", false).get_raw().await.unwrap();
+
+            assert_eq!(String::from("Some param"), param_value);
+        })
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_manager_get_ssm_raw_parameter_secure_string() {
+        let config = MockServerConfig {
+            endpoint: PARAMETERS_ENDPOINT,
+            query: hashmap! {"name" => "/some/path/to/a/param", "withDecryption" => "true"},
+            status: 200,
+            response: "{
+                \"Parameter\": {
+                    \"ARN\": \"arn:aws:ssm:us-east-1:000000000000:parameter/some/path/to/a/param\",
+                    \"DataType\": \"text\",
+                    \"LastModifiedDate\": \"2024-03-01T17:53:36.314Z\",
+                    \"Name\": \"/some/path/to/a/param\",
+                    \"Selector\": null,
+                    \"SourceResult\": null,
+                    \"Type\": \"SecureString\",
+                    \"Value\": \"Some encrypted string (now decrypted)\",
+                    \"Version\": 1
+                },
+                \"ResultMetadata\": {}
+            }",
+        };
+
+        with_mock_server(config, |port| async move {
+            let manager = ManagerBuilder::new()
+                .with_port(port)
+                .with_token(String::from("TOKEN"))
+                .build()
+                .unwrap();
+
+            let param_value = manager.get_parameter("/some/path/to/a/param", true).get_raw().await.unwrap();
+
+            assert_eq!(String::from("Some encrypted string (now decrypted)"), param_value);
         })
         .await;
     }
