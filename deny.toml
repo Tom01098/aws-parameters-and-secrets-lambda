@@ -1,31 +1,17 @@
-all-features = true
+[output]
 feature-depth = 1
 
-[advisories]
-db-path = "~/.cargo/advisory-db"
-db-urls = ["https://github.com/rustsec/advisory-db"]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "warn"
-notice = "warn"
-ignore = [
-    # Unaligned read in `atty`, transitive dependency from `lalrpop`.
-    # Not possible to cause unless an application using this crate uses a custom
-    # allocator and messes with pointers.
-    "RUSTSEC-2021-0145",
-]
+[graph]
+all-features = true
 
 [licenses]
-unlicensed = "deny"
+version = 2
 allow = [
     "MIT",
     "Apache-2.0",
     "Unicode-DFS-2016",
-    "BSD-3-Clause",
-    "CC0-1.0"
+    "BSD-3-Clause"
 ]
-default = "deny"
-confidence-threshold = 0.8
 
 [licenses.private]
 ignore = false

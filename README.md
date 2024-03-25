@@ -1,7 +1,7 @@
 # aws-parameters-and-secrets-lambda
 Cache AWS Secrets Manager secrets in your AWS Lambda function, reducing latency (we don't need to query another service) and cost ([Secrets Manager charges based on queries]).
 
-## Quickstart
+## Quickstart (Secrets)
 Add the [AWS Parameters and Secrets Lambda Extension] [layer to your Lambda function]. Only version 2 of this layer is currently supported.
 
 Assuming a secret exists with the name "backend-server" containing a key/value pair with a key of "api_key" and a value of

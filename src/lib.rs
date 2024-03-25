@@ -69,6 +69,9 @@ assert_impl_all!(Manager: Send, Sync, Debug, Clone);
 assert_impl_all!(Secret: Send, Sync, Debug, Clone);
 assert_impl_all!(VersionIdQuery: Send, Sync, Debug, Clone);
 assert_impl_all!(VersionStageQuery: Send, Sync, Debug, Clone);
+assert_impl_all!(Parameter: Send, Sync, Debug, Clone);
+assert_impl_all!(ExtensionResponseParam: Send, Sync, Debug, Clone);
+assert_impl_all!(ExtensionResponseParameterField: Send, Sync, Debug, Clone);
 
 /// Flexible builder for a [`Manager`].
 ///
@@ -321,7 +324,7 @@ impl Eq for Parameter {}
 
 /// The response from the AWS Lambda extension when successfully queried for a paramater at
 /// endpoint `/systemsmanager/parameters/get/?name=...`.
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ExtensionResponseParam {
     /// The parameter returned.
     #[serde(rename = "Parameter")]
@@ -329,7 +332,7 @@ pub struct ExtensionResponseParam {
 }
 
 /// A parameter returned by the AWS Lambda extension, as structured JSON
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug, Clone)]
 pub struct ExtensionResponseParameterField {
     /// The parameter's ARN (Amazon Resource Name) full path.
     #[serde(rename = "ARN")]
