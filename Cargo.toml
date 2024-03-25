@@ -1,7 +1,7 @@
 [package]
 name = "aws-parameters-and-secrets-lambda"
 description = "Cache AWS Secrets Manager secrets in your AWS Lambda function"
-version = "0.1.0"
+version = "1.0.0"
 authors = ["Tom Humphreys <Tom01098Code@gmail.com>"]
 
 homepage = "https://docs.rs/aws-parameters-and-secrets-lambda/"
